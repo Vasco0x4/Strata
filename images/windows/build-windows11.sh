@@ -54,9 +54,9 @@ qemu-img create -f qcow2 "$disk" "${DISK_GB}G" >/dev/null
 dom="strata-build-win11"
 cleanup_domain "$dom"
 trap 'cleanup_domain "$dom"' EXIT
-log "installing Windows (unattended; this takes several minutes)"
-# E: must be the virtio ISO (autounattend.xml and provision.ps1 reference E:\...).
-# CD order defines drive letters, so attach virtio before the answer media.
+log "installing Windows (unattended; this takes a while)"
+# provision.ps1 lives on the STRATA answer ISO and autounattend searches every drive for it
+# (CD letters shift after the install reboots). virtio drivers are referenced by path too.
 # Boot the Windows ISO first (order 1) so the installer starts without a boot-menu detour;
 # the disk is order 2 so that on the reboots during setup — once we stop pressing keys — the
 # "Press any key to boot from CD" prompt times out and the machine boots the installed Windows.
@@ -79,8 +79,15 @@ virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4
 	sleep 1
   done ) &
 
-log "waiting for the unattended install to finish and power off (up to 60 min)"
-wait_shutoff "$dom" 3600
+# From here, leave the VM in place on failure so it can be inspected (screenshot, console)
+# instead of being destroyed by the EXIT trap.
+trap - EXIT
+log "waiting for the unattended install to finish and power off (up to 90 min)"
+if ! wait_shutoff "$dom" 5400; then
+	die "$dom did not power off in time. It was left running for inspection:
+  sudo virsh -c qemu:///system screenshot $dom /tmp/win.ppm
+  sudo virsh -c qemu:///system start $dom   (if already off)"
+fi
 cleanup_domain "$dom"
 trap - EXIT
 

@@ -95,8 +95,8 @@
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File E:\provision.ps1</CommandLine>
-          <Description>Strata provisioning</Description>
+          <CommandLine>cmd.exe /c "for %d in (C D E F G H I J) do @if exist %d:\provision.ps1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File %d:\provision.ps1"</CommandLine>
+          <Description>Strata provisioning (find provision.ps1 on any drive; letters shift after install)</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

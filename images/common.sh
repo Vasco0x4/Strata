@@ -68,7 +68,7 @@ wait_shutoff() {
 	local dom=$1 timeout=$2 start
 	start=$(date +%s)
 	while $VIRSH domstate "$dom" 2>/dev/null | grep -q running; do
-		(( $(date +%s) - start > timeout )) && die "$dom still running after ${timeout}s"
+		(( $(date +%s) - start > timeout )) && return 1   # caller decides what to do
 		sleep 15
 	done
 }
