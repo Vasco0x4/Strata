@@ -57,14 +57,16 @@ trap 'cleanup_domain "$dom"' EXIT
 log "installing Windows (unattended; this takes a while)"
 # provision.ps1 lives on the STRATA answer ISO and autounattend searches every drive for it
 # (CD letters shift after the install reboots). virtio drivers are referenced by path too.
-# Boot the Windows ISO first (order 1) so the installer starts without a boot-menu detour;
-# the disk is order 2 so that on the reboots during setup — once we stop pressing keys — the
-# "Press any key to boot from CD" prompt times out and the machine boots the installed Windows.
+# Boot the DISK first. On the very first boot it is empty, so the firmware falls through to the
+# Windows ISO (order 2) and the key-spam below answers its "Press any key" prompt to start Setup.
+# On every later reboot during the install the disk has a bootloader and boots the installed
+# Windows directly — so Setup is never re-entered from the CD (which aborts with "the computer
+# restarted unexpectedly").
 virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4 \
 	--cpu host-passthrough --machine q35 \
 	--boot uefi,loader.secure=yes --features smm.state=on --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-	--disk "$win_iso",device=cdrom,boot.order=1 \
-	--disk "$disk",format=qcow2,bus=virtio,boot.order=2 \
+	--disk "$disk",format=qcow2,bus=virtio,boot.order=1 \
+	--disk "$win_iso",device=cdrom,boot.order=2 \
 	--disk "$work/virtio-win.iso",device=cdrom \
 	--disk "$work/answer.iso",device=cdrom \
 	--network network="$BUILD_NET",model=virtio \
