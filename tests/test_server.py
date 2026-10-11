@@ -152,3 +152,27 @@ def test_rest_api_and_web_login(server):
     r = httpx.put(f"{base}/api/vms/c1/files", params={"path": "/tmp/x"}, content=b"\x00\x01binary", headers=h)
     assert r.status_code == 200, r.text
     assert httpx.get(f"{base}/api/vms/c1/files", params={"path": "/tmp/x"}, headers=h).content == b"\x00\x01binary"
+
+
+def test_cli(server, monkeypatch, capsys):
+    from strata import cli
+    cfg, db, tokens = server
+    monkeypatch.setenv("STRATA_URL", cfg.base_url)
+    monkeypatch.setenv("STRATA_TOKEN", tokens["bob"])
+
+    def run(*argv):
+        monkeypatch.setattr("sys.argv", ["strata", *argv])
+        try:
+            cli.main()
+        except SystemExit as e:
+            assert not e.code, capsys.readouterr()
+        return capsys.readouterr().out
+
+    run("create", "ubuntu", "--name", "cli1")
+    assert "cli1" in run("vms")
+    assert "echo hi" in run("exec", "cli1", "--", "echo", "hi")
+    run("snapshot", "cli1", "s1")
+    assert "s1" in run("snapshots", "cli1")
+    assert "access" in run("--json", "show", "cli1")
+    run("destroy", "-y", "cli1")
+    assert "cli1" not in run("vms")
