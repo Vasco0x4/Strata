@@ -83,11 +83,9 @@ class FakeHypervisor:
     def diff_disks(self, disk_a, disk_b):
         return [{"change": "added", "path": "/tmp/new", "details": "regular 0644"}]
 
-    def add_dhcp_host(self, mac, ip, name):
-        self.dhcp.add((mac, ip, name))
-
-    def remove_dhcp_host(self, mac, ip, name):
-        self.dhcp.discard((mac, ip, name))
+    def get_ip(self, name, subnet_prefix):
+        # Emulate dnsmasq handing out a sticky per-VM address.
+        return self.vms[name]["spec"].ip if name in self.vms else None
 
 
 class FakeNet:

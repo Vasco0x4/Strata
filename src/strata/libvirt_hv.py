@@ -112,7 +112,7 @@ def _domain_xml(cfg: Config, spec: VMSpec, disk: str) -> str:
       <mac address='{spec.mac}'/>
       <model type='virtio'/>
       <filterref filter='clean-traffic'>
-        <parameter name='IP' value='{spec.ip}'/>
+        <parameter name='CTRL_IP_LEARNING' value='dhcp'/>
       </filterref>
     </interface>
     <channel type='unix'><target type='virtio' name='org.qemu.guest_agent.0'/></channel>
@@ -490,21 +490,21 @@ class LibvirtHypervisor:
 
     # ---------- network ----------
 
-    def _dhcp(self, command: int, mac: str, ip: str, name: str) -> None:
-        net = self.conn.networkLookupByName(self.cfg.network)
-        xml = f"<host mac='{mac}' name={quoteattr(name)} ip='{ip}'/>"
-        net.update(command, libvirt.VIR_NETWORK_SECTION_IP_DHCP_HOST, -1, xml,
-                   libvirt.VIR_NETWORK_UPDATE_AFFECT_LIVE | libvirt.VIR_NETWORK_UPDATE_AFFECT_CONFIG)
+    def get_ip(self, name: str, subnet_prefix: str) -> str | None:
+        """The VM's current IPv4 on the lab subnet, read from the guest agent.
 
-    def add_dhcp_host(self, mac: str, ip: str, name: str) -> None:
+        We do not pin IPs: dnsmasq assigns a sticky per-MAC lease, so this is stable across
+        reboots and reverts. The clean-traffic filter learns the same address from DHCP and
+        blocks any other source, so the VM cannot spoof it.
+        """
         try:
-            self._dhcp(libvirt.VIR_NETWORK_UPDATE_COMMAND_DELETE, mac, ip, name)
+            ifaces = self._dom(name).interfaceAddresses(
+                libvirt.VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, 0)
         except libvirt.libvirtError:
-            pass
-        self._dhcp(libvirt.VIR_NETWORK_UPDATE_COMMAND_ADD_LAST, mac, ip, name)
-
-    def remove_dhcp_host(self, mac: str, ip: str, name: str) -> None:
-        try:
-            self._dhcp(libvirt.VIR_NETWORK_UPDATE_COMMAND_DELETE, mac, ip, name)
-        except libvirt.libvirtError:
-            pass
+            return None
+        for iface in (ifaces or {}).values():
+            for addr in iface.get("addrs") or []:
+                ip = addr.get("addr", "")
+                if addr.get("type") == libvirt.VIR_IP_ADDR_TYPE_IPV4 and ip.startswith(subnet_prefix + "."):
+                    return ip
+        return None

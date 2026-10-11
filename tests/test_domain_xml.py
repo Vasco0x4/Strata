@@ -62,8 +62,8 @@ def test_nic_is_antispoof_pinned(hv_mod):
     assert iface.find("mac").get("address") == spec.mac
     fref = iface.find("filterref")
     assert fref is not None and fref.get("filter") == "clean-traffic", "missing anti-spoof filter"
-    ip = fref.find("parameter[@name='IP']")
-    assert ip is not None and ip.get("value") == spec.ip, "NIC not pinned to the VM's IP"
+    learn = fref.find("parameter[@name='CTRL_IP_LEARNING']")
+    assert learn is not None and learn.get("value") == "dhcp", "NIC anti-spoof not set to DHCP learning"
 
 
 def test_resources_match_spec(hv_mod):

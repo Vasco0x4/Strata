@@ -68,8 +68,8 @@ class Hypervisor(Protocol):
         """Offline file-level diff between two frozen disks: added, deleted and changed paths."""
 
     # Network
-    def add_dhcp_host(self, mac: str, ip: str, name: str) -> None: ...
-    def remove_dhcp_host(self, mac: str, ip: str, name: str) -> None: ...
+    def get_ip(self, name: str, subnet_prefix: str) -> str | None:
+        """The VM's current IPv4 on the lab subnet (from the guest agent), or None."""
 
 
 class NetworkControl(Protocol):

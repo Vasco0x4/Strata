@@ -53,7 +53,7 @@ def test_hypervisor_impl_signatures_match(fake_libvirt):
     """LibvirtHypervisor and the fake agree with the protocol on parameter names."""
     from strata.hypervisor import Hypervisor
     from strata.libvirt_hv import LibvirtHypervisor
-    for name in ("create_vm", "exec", "snapshot", "revert", "diff_disks", "add_dhcp_host"):
+    for name in ("create_vm", "exec", "snapshot", "revert", "diff_disks", "get_ip"):
         proto = inspect.signature(getattr(Hypervisor, name))
         impl = inspect.signature(getattr(LibvirtHypervisor, name))
         assert list(proto.parameters) == list(impl.parameters), \

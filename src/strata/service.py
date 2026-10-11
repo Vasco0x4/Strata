@@ -134,10 +134,9 @@ class Service:
         used_ports = set()
         for r in self.db.all("SELECT ssh_port, rdp_port FROM vms"):
             used_ports.update(p for p in (r["ssh_port"], r["rdp_port"]) if p)
-        # Reserved IPs must fall inside the network's DHCP range (.100-.250 in network.xml.in);
-        # dnsmasq ignores a fixed reservation outside its range, so the VM would get a pool
-        # address while the firewall and forwards expect the reserved one.
-        ip = next((f"{self.cfg.subnet_prefix}.{i}" for i in range(100, 250)
+        # A unique placeholder address, below the DHCP pool (.100-.250), held only until the
+        # VM boots and its real DHCP address is discovered (dnsmasq assigns, we do not pin).
+        ip = next((f"{self.cfg.subnet_prefix}.{i}" for i in range(10, 100)
                    if f"{self.cfg.subnet_prefix}.{i}" not in used_ips), None)
         if ip is None:
             raise Conflict("no free address left for a new VM", "destroy unused VMs")
@@ -265,22 +264,28 @@ class Service:
 
         with self._vm_locks[name]:
             try:
-                self.hv.add_dhcp_host(mac, ip, name)
-                self._sync_network()
                 self.hv.create_vm(VMSpec(name, os_, vcpus, ram_mb, mac, ip, backing))
                 self.hv.wait_ready(name, READY_TIMEOUT[os_])
                 self.hv.set_password(name, username, password)
+                self._refresh_ip(name)
             except Exception:
-                self._remove(name, mac, ip)
+                self._remove(name)
                 raise
         return self._describe(self.db.one("SELECT * FROM vms WHERE name = ?", (name,)))
 
-    def _remove(self, name: str, mac: str, ip: str) -> None:
-        for step in (lambda: self.hv.delete_vm(name), lambda: self.hv.remove_dhcp_host(mac, ip, name)):
-            try:
-                step()
-            except Exception:
-                log.exception("cleanup of %s", name)
+    def _refresh_ip(self, name: str) -> None:
+        """Record the VM's actual DHCP address and re-apply the firewall for it. We discover
+        the IP rather than pin it: dnsmasq leases are sticky per MAC, so it is stable."""
+        actual = self.hv.get_ip(name, self.cfg.subnet_prefix)
+        if actual:
+            self.db.execute("UPDATE vms SET ip = ? WHERE name = ?", (actual, name))
+        self._sync_network()
+
+    def _remove(self, name: str) -> None:
+        try:
+            self.hv.delete_vm(name)
+        except Exception:
+            log.exception("cleanup of %s", name)
         self.db.execute("DELETE FROM vms WHERE name = ?", (name,))
         self._sync_network()
 
@@ -294,7 +299,7 @@ class Service:
             raise Conflict(f"{vm!r} has VMs forked from its snapshots: "
                            + ", ".join(c["name"] for c in children), "destroy those first")
         with self._vm_locks[vm]:
-            self._remove(vm, row["mac"], row["ip"])
+            self._remove(vm)
         return {"destroyed": vm}
 
     @journaled("power")
@@ -431,6 +436,7 @@ class Service:
             # A revert boots the VM (from the memory state, or fresh from the frozen disk);
             # wait until the guest agent answers so the VM is actually usable on return.
             self.hv.wait_ready(vm, READY_TIMEOUT[row["os"]])
+            self._refresh_ip(vm)
         return {"vm": vm, "reverted_to": snapshot, "state": self.hv.state(vm)}
 
     @journaled("delete_snapshot")
@@ -485,7 +491,7 @@ class Service:
             if self.db.one("SELECT 1 FROM vms WHERE source LIKE ?", (f"snapshot {row['name']}/%",)):
                 continue  # forks depend on it; it goes once they are gone
             with self._vm_locks[row["name"]]:
-                self._remove(row["name"], row["mac"], row["ip"])
+                self._remove(row["name"])
             self.db.log("strata", row["name"], "expired", {}, True, {"destroyed": row["name"]}, 0)
             reaped.append(row["name"])
         return reaped
