@@ -23,15 +23,20 @@ instant copies, snapshots, forks from any state, offline diff between states.
 - Commit in English, push to github.com/Vasco0x4/Strata. Test, commit and push per step.
 
 ## State / next
-Host installer NOT run yet (no libvirt on this box). All code written; 62 tests pass
-against the fake hypervisor (incl. e2e MCP/HTTP/CLI), ruff + CI green, systemd units and
-the package build verified offline. A review-driven de-risking pass fixed three real
-first-run bugs: the Secure Boot firmware XML (would fail every Windows create), the noVNC
-console socket family (AF_INET vs AF_UNIX), and `--os-variant` aborting on an unknown name.
+LIVE on the real KVM host (installed via the user's sudo; password was sandbox/sandbox —
+do not store it). stratad runs on http://10.50.0.214:8080; admin token at
+/var/lib/strata/admin-token. `setup/smoke-test.sh` passes 14/14: create, exec, files,
+snapshot, diff, revert, fork, and full isolation (VM cannot reach host/LAN/Proxmox/internet
+unless enabled). 63 tests + ruff + CI green.
 
-The live bring-up is hard-blocked on the user running `sudo bash setup/install-host.sh`
-(then `deploy.sh`, then an image build). After that, run `setup/smoke-test.sh` — it
-encodes the acceptance + isolation criteria (create/exec/files/snapshot/revert/fork/diff,
-and proves a VM cannot reach host/LAN/hypervisor/internet). Then `setup/lockdown.sh`.
-The libvirt layer, image builders and noVNC console have still never run on a real host.
-See `docs/PLAN.md`.
+Host specifics discovered live (baked into install-host.sh): libvirtd is the monolithic
+daemon (not virtqemud); qemu.conf has dynamic_ownership=0, remember_owner=0, namespaces=[];
+pools are setgid kvm 2775; strata user is in kvm+libvirt+strata-admin. IPs are NOT pinned —
+dnsmasq wouldn't honor reservations, so VMs get sticky DHCP leases and Strata discovers the
+IP via the guest agent; clean-traffic uses CTRL_IP_LEARNING=dhcp. Offline diff uses a
+prebuilt fixed libguestfs appliance (/var/lib/strata/appliance) so it needn't read /boot.
+To run CLI as yourself: `sudo -u sandbox` (fresh shell picks up the kvm/strata-admin groups);
+`strata` is symlinked at /usr/local/bin.
+
+Next: build the Windows 11 image (images/windows/build-windows11.sh) and exercise it;
+visually confirm the noVNC live console in a browser; then setup/lockdown.sh. See docs/PLAN.md.

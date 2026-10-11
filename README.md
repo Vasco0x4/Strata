@@ -9,9 +9,11 @@ states. Agents drive it through MCP with their own token; humans use a web UI or
 
 > **Security model:** see [docs/SECURITY.md](docs/SECURITY.md).
 >
-> **Status:** works end to end against a fake hypervisor (unit + integration tests);
-> the libvirt layer and the image builders are pending a first run on a real host.
-> See [docs/PLAN.md](docs/PLAN.md).
+> **Status:** running on a real KVM host. The full acceptance + isolation suite
+> (`setup/smoke-test.sh`) passes: create, exec, file transfer, snapshot, diff, revert,
+> fork, and a VM that cannot reach the host, the LAN, the hypervisor or the internet
+> unless explicitly allowed. Windows 11 images and the web console's live screen are the
+> next things to exercise on real hardware. See [docs/PLAN.md](docs/PLAN.md).
 
 ## Security model
 

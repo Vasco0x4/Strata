@@ -18,7 +18,8 @@ pass() { printf '  \033[32m[PASS]\033[0m %s\n' "$1"; }
 fail() { printf '  \033[31m[FAIL]\033[0m %s\n' "$1"; fails=$((fails+1)); }
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 
-cleanup() { $STRATA destroy -y "$VM1" >/dev/null 2>&1 || true; $STRATA destroy -y "$VM2" >/dev/null 2>&1 || true; }
+# Destroy the fork (VM2) before VM1: VM1 cannot be removed while a VM forked from its snapshot exists.
+cleanup() { $STRATA destroy -y "$VM2" >/dev/null 2>&1 || true; $STRATA destroy -y "$VM1" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 command -v "$STRATA" >/dev/null || { echo "strata CLI not found; run setup/deploy.sh"; exit 1; }
