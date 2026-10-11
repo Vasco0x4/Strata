@@ -7,6 +7,8 @@ Start from a clean image, copy it instantly, run anything inside, snapshot the
 interesting states, go back, fork from any state, and see what changed between two
 states. Agents drive it through MCP with their own token; humans use a web UI or the CLI.
 
+> **Security model:** see [docs/SECURITY.md](docs/SECURITY.md).
+>
 > **Status:** works end to end against a fake hypervisor (unit + integration tests);
 > the libvirt layer and the image builders are pending a first run on a real host.
 > See [docs/PLAN.md](docs/PLAN.md).
