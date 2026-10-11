@@ -13,5 +13,9 @@
   </ip>
   <dnsmasq:options>
     <dnsmasq:option value='dhcp-option=option:dns-server,9.9.9.9,1.1.1.1'/>
+    <!-- Match DHCP reservations by MAC: guests (systemd-networkd) send a client-id,
+         and without this dnsmasq keys on it and hands out a pool address instead of the
+         reserved one that the port-forwards and the anti-spoof filter depend on. -->
+    <dnsmasq:option value='dhcp-ignore-clid'/>
   </dnsmasq:options>
 </network>

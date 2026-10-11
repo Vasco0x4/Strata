@@ -154,6 +154,18 @@ for pool in images vms iso; do
 	virsh -q pool-info "$name" | grep -q '^State:.*running' || virsh -q pool-start "$name"
 done
 
+# Prebuilt libguestfs appliance for offline diffs. Built once as root here so the
+# unprivileged service never needs to read the root-only host kernel in /boot.
+APPLIANCE_DIR=/var/lib/strata/appliance
+if [[ ! -f "$APPLIANCE_DIR/kernel" ]]; then
+	install -d -m 0755 "$APPLIANCE_DIR"
+	libguestfs-make-fixed-appliance "$APPLIANCE_DIR"
+fi
+# The service runs as the strata user and traverses its own 0700 state dir to reach the
+# appliance; only the appliance dir and files need to be readable (the copied kernel is 0600).
+chmod 0755 "$APPLIANCE_DIR"
+chmod 0644 "$APPLIANCE_DIR"/kernel "$APPLIANCE_DIR"/initrd "$APPLIANCE_DIR"/root 2>/dev/null || true
+
 step "6/9 Firewall helper"
 install -d -m 0755 /usr/local/lib/strata
 install -m 0755 -o root -g root "$REPO/helpers/strata-netctl" /usr/local/lib/strata/strata-netctl
@@ -211,6 +223,7 @@ ConditionPathExists=/opt/strata/.venv/bin/stratad
 [Service]
 User=strata
 Group=strata
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/strata/.venv/bin/stratad
 Restart=on-failure
 RestartSec=5

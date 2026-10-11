@@ -450,7 +450,11 @@ class LibvirtHypervisor:
         # virt-diff walks both disks read-only and reports what differs. It needs the
         # whole qcow2 backing chain, which resolves automatically from the overlay paths.
         cmd = ["virt-diff", "--atime", "-a", disk_a, "-A", disk_b]
-        env = {"LIBGUESTFS_BACKEND": "direct", "PATH": "/usr/bin:/bin", "HOME": "/tmp"}
+        # A prebuilt fixed appliance (made as root at install time) means virt-diff does not
+        # need to read the host kernel in /boot, which is root-only; the service stays unprivileged.
+        env = {"LIBGUESTFS_BACKEND": "direct", "PATH": "/usr/bin:/bin", "HOME": "/tmp", "TMPDIR": "/tmp"}
+        if self.cfg.appliance_dir.is_dir():
+            env["LIBGUESTFS_PATH"] = str(self.cfg.appliance_dir)
         try:
             out = subprocess.run(cmd, capture_output=True, timeout=1800, env=env)
         except FileNotFoundError:
