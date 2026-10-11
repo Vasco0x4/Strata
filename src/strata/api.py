@@ -293,7 +293,8 @@ class Api:
         except StrataError:
             await ws.close(code=4401)
             return
-        sock = socket.socket(fileno=fd)
+        # libvirt hands over a connected AF_UNIX socket; wrap it with the right family.
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=fd)
         sock.setblocking(False)
         reader, writer = await asyncio.open_connection(sock=sock)
         offered = ws.scope.get("subprotocols") or []
