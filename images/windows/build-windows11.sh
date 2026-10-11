@@ -93,9 +93,16 @@ fi
 cleanup_domain "$dom"
 trap - EXIT
 
-# Shrink the image now that install is done
-log "finalizing image"
-qemu-img convert -O qcow2 -c "$disk" "$disk.tmp" && mv "$disk.tmp" "$disk"
+# The installed disk is used as the image as-is. We deliberately skip the usual
+# `qemu-img convert -c` recompression: it writes a second full copy alongside the original
+# (a transient storage spike), which on a tight thin-provisioned host can exhaust the
+# backing store. Set WIN_COMPRESS=1 to recompress anyway when there is ample free space.
+if [[ "${WIN_COMPRESS:-0}" == 1 ]]; then
+	log "finalizing image (recompressing)"
+	qemu-img convert -O qcow2 -c "$disk" "$disk.tmp" && mv "$disk.tmp" "$disk"
+else
+	log "finalizing image (no recompression; set WIN_COMPRESS=1 to shrink when space allows)"
+fi
 $VIRSH pool-refresh strata-images >/dev/null 2>&1 || true
 register "$NAME" windows "$VOLUME" strata "Windows 11 Enterprise (evaluation)"
 log "done: $NAME  (temporary setup password was StrataSetup!1; Strata resets it per VM)"
