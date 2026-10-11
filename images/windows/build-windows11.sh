@@ -62,10 +62,15 @@ log "installing Windows (unattended; this takes a while)"
 # On every later reboot during the install the disk has a bootloader and boots the installed
 # Windows directly — so Setup is never re-entered from the CD (which aborts with "the computer
 # restarted unexpectedly").
-virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4 \
+# Build-time performance: this is a throwaway build VM, so use cache=unsafe (skips the guest's
+# fsyncs — a big speedup for Windows setup's many small writes; fine because a crash just means
+# rebuild) and more vCPUs. Nested virtualization is inherently slow, especially with Windows 11's
+# VBS; these cut the wall time noticeably. Tune with BUILD_VCPUS.
+BUILD_VCPUS="${BUILD_VCPUS:-8}"
+virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus "$BUILD_VCPUS" \
 	--cpu host-passthrough --machine q35 \
 	--boot uefi,loader.secure=yes --features smm.state=on --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-	--disk "$disk",format=qcow2,bus=virtio,boot.order=1 \
+	--disk "$disk",format=qcow2,bus=virtio,boot.order=1,cache=unsafe,discard=unmap \
 	--disk "$win_iso",device=cdrom,boot.order=2 \
 	--disk "$work/virtio-win.iso",device=cdrom \
 	--disk "$work/answer.iso",device=cdrom \
