@@ -159,12 +159,13 @@ for pool in images vms iso; do
 	virsh -q pool-info "$name" | grep -q '^State:.*running' || virsh -q pool-start "$name"
 done
 
-# Deterministic disk ownership instead of libvirt's dynamic relabeling. Strata creates and
-# re-chains overlays out of band (external snapshots, forks, reverts); libvirt's DAC/AppArmor
-# label bookkeeping cannot follow that and ends up denying qemu access to backing files. With
-# relabeling off and the setgid-kvm pools above, every disk is correctly owned from creation.
+# libvirt disk/TPM handling. Keep dynamic_ownership=1 so libvirt chowns disks and the swtpm
+# (TPM) socket to the qemu user — swtpm needs it for Windows 11. remember_owner=0 avoids the
+# restore-on-stop bookkeeping that mishandles Strata's shared backing images, and namespaces=[]
+# avoids the per-VM mount namespace that denied qemu access to deep backing chains. The setgid
+# -kvm pools above keep every disk group-readable by the service for offline diffs regardless.
 qconf=/etc/libvirt/qemu.conf
-for kv in "dynamic_ownership = 0" "remember_owner = 0" "namespaces = [ ]"; do
+for kv in "dynamic_ownership = 1" "remember_owner = 0" "namespaces = [ ]"; do
 	key=${kv%% *}
 	if grep -qE "^\s*$key\s*=" "$qconf"; then
 		sed -i "s|^\s*$key\s*=.*|$kv|" "$qconf"
