@@ -33,6 +33,18 @@ class Unauthorized(StrataError):
     pass
 
 
+def rdp_file(address: str, username: str) -> str:
+    """RDP connection file with every device and clipboard redirection off: nothing crosses
+    from the VM to the client machine except the screen."""
+    return "\r\n".join([
+        f"full address:s:{address}", f"username:s:{username}", "prompt for credentials:i:1",
+        "redirectclipboard:i:0", "redirectdrives:i:0", "drivestoredirect:s:", "redirectprinters:i:0",
+        "redirectcomports:i:0", "redirectsmartcards:i:0", "redirectposdevices:i:0",
+        "devicestoredirect:s:", "usbdevicestoredirect:s:", "camerastoredirect:s:",
+        "redirectwebauthn:i:0", "audiocapturemode:i:0", "audiomode:i:2", "authentication level:i:2",
+    ]) + "\r\n"
+
+
 def connect_command(cfg: Config, token: str) -> str:
     return (f'claude mcp add --transport http strata {cfg.base_url}/mcp '
             f'--header "Authorization: Bearer {token}"')
@@ -127,6 +139,14 @@ class Api:
             return Response(data, media_type="application/octet-stream",
                             headers={"Content-Disposition": "attachment"})
 
+        def rdp(r, b):
+            info = s.get_vm(self.caller(r), p(r, "vm"))
+            if not info["access"]["rdp"]:
+                raise StrataError(f"{info['name']} has no RDP (not a Windows VM)")
+            return Response(rdp_file(info["access"]["rdp"], info["access"]["username"]),
+                            media_type="application/x-rdp",
+                            headers={"Content-Disposition": f'attachment; filename="{info["name"]}.rdp"'})
+
         def agents(r, b):
             self.admin(r)
             if r.method == "POST":
@@ -203,6 +223,7 @@ class Api:
             Route(snap + "/fork", e(lambda r, b: s.fork(self.caller(r), p(r, "vm"), p(r, "snap"),
                                                         **allowed(b, "name", "internet"))), methods=["POST"]),
             Route(vm + "/download", e(download)),
+            Route(vm + "/rdp", e(rdp)),
             WebSocketRoute(vm + "/console", self.console),
         ]
         return routes

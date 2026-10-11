@@ -1,1 +1,23 @@
-<!doctype html><title>Strata</title>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strata</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">Strata</a>
+    <nav id="nav" hidden>
+      <a href="/" data-link>VMs</a>
+      <a href="/agents" data-link id="nav-agents" hidden>Agents</a>
+      <span id="whoami"></span>
+      <button id="logout" class="ghost">Log out</button>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <div id="toast" role="status" hidden></div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

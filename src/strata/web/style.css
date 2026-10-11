@@ -1,0 +1,62 @@
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1c1f24; --muted: #667085; --line: #e3e6ea;
+  --accent: #2f6fed; --accent-text: #ffffff; --danger: #c4332b; --ok: #1f8a4c; --warn: #b26b00;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317; --panel: #1a1d23; --text: #e6e8eb; --muted: #9aa3ae; --line: #2a2f37;
+    --accent: #5b8cff; --accent-text: #0b0d10; --danger: #ff6b61; --ok: #4cc38a; --warn: #f0a83a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 17px; color: var(--text); text-decoration: none; letter-spacing: .3px; }
+nav { display: flex; align-items: center; gap: 16px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a.active, nav a:hover { color: var(--text); }
+#whoami { color: var(--muted); font-size: 13px; }
+main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 16px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; min-width: 0; }
+label.check { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+button:disabled { opacity: .5; cursor: wait; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+td a { color: var(--accent); text-decoration: none; }
+.mono, code { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.state { display: inline-flex; align-items: center; gap: 6px; }
+.state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.state.running::before { background: var(--ok); }
+.state.paused::before { background: var(--warn); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
+.kv dt { color: var(--muted); font-size: 12px; }
+.kv dd { margin: 0; display: flex; gap: 6px; align-items: center; min-width: 0; word-break: break-all; }
+.copy { padding: 1px 6px; font-size: 11px; }
+#screen { background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 10; display: flex;
+  align-items: center; justify-content: center; color: #8a8f98; }
+#screen > div { width: 100%; height: 100%; }
+.secret { background: var(--bg); border: 1px dashed var(--accent); border-radius: 8px; padding: 12px; }
+.secret code { display: block; white-space: pre-wrap; word-break: break-all; margin: 6px 0 10px; }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text);
+  color: var(--bg); padding: 8px 14px; border-radius: 8px; max-width: 90vw; }
+#toast.error { background: var(--danger); color: #fff; }
+.login { max-width: 420px; margin: 10vh auto; }
+.journal td { font-size: 12.5px; }
+.bad { color: var(--danger); }
