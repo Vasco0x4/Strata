@@ -22,9 +22,20 @@ fetch() {
 	local url=$1 dest=$2
 	[[ -s "$dest" ]] && { log "have $(basename "$dest")"; return; }
 	log "downloading $(basename "$dest")"
+	# No browser User-Agent on purpose: fedorapeople.org's anti-bot challenges browser-like
+	# UAs (serving an HTML page instead of the file) but allows the default curl UA, and
+	# Microsoft's download works with it too.
 	curl -fL -C - --retry 10 --retry-delay 5 --retry-all-errors \
-		--connect-timeout 30 -A "Mozilla/5.0" -o "$dest.part" "$url"
+		--connect-timeout 30 -o "$dest.part" "$url"
 	mv "$dest.part" "$dest"
+}
+
+# expect_min_size FILE BYTES -- guard against anti-bot HTML or truncated downloads
+expect_min_size() {
+	local file=$1 min=$2 size
+	size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+	(( size >= min )) || die "$(basename "$file") is only $size bytes (expected >= $min);
+  the server may have returned an error or anti-bot page instead of the file."
 }
 
 # verify_sha256 FILE EXPECTED

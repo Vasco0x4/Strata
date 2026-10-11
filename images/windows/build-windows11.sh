@@ -36,10 +36,16 @@ fi
 
 log "fetching virtio-win driver ISO"
 fetch "$VIRTIO_URL" "$work/virtio-win.iso"
+expect_min_size "$work/virtio-win.iso" 100000000   # a real ISO is ~800 MB, not an HTML error page
 fetch "$VIRTIO_SUM_URL" "$work/virtio-win.iso-CHECKSUM"
 # The CHECKSUM file lists several algorithms; take the SHA256 line for this ISO.
-sum=$(grep -iA3 'SHA256' "$work/virtio-win.iso-CHECKSUM" | grep -oiE '[0-9a-f]{64}' | head -n1)
-[[ -n "$sum" ]] && verify_sha256 "$work/virtio-win.iso" "$sum" || log "no SHA256 in CHECKSUM, skipping virtio check"
+# '|| true' so set -e does not abort if the grep finds nothing (then we just skip the check).
+sum=$(grep -iA3 'SHA256' "$work/virtio-win.iso-CHECKSUM" | grep -oiE '[0-9a-f]{64}' | head -n1 || true)
+if [[ -n "$sum" ]]; then
+	verify_sha256 "$work/virtio-win.iso" "$sum"
+else
+	log "no SHA256 found in CHECKSUM, skipping virtio checksum verification"
+fi
 
 log "building the unattended answer media"
 answer="$work/answer"
