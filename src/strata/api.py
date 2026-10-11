@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import re
 import socket
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from .errors import Conflict, Forbidden, NotFound, StrataError
 from .service import Service
 
 COOKIE = "strata_token"
+IMAGE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 WEB_DIR = Path(__file__).parent / "web"
 NOVNC_DIR = Path("/usr/share/novnc")
 MAX_FILE_UPLOAD = 2 * 1024 * 1024 * 1024
@@ -263,8 +265,11 @@ class Api:
     def register_image(self, name: str, os: str, volume: str, username: str, description: str = "") -> dict:
         if os not in ("windows", "linux"):
             raise StrataError("os must be windows or linux")
-        if not auth.NAME_RE.fullmatch(name):
-            raise StrataError(f"invalid image name {name!r}")
+        # Image names are labels (never libvirt domain names or paths), so dots are allowed,
+        # e.g. ubuntu-24.04. VM and snapshot names stay stricter (see service.NAME_RE).
+        if not IMAGE_NAME_RE.fullmatch(name):
+            raise StrataError(f"invalid image name {name!r}",
+                              "use lowercase letters, digits, '.', '-' or '_'")
         self.hv.volume_path(self.cfg.images_pool, volume)  # must exist
         self.db.execute("INSERT INTO images (name, os, volume, username, description, created_at)"
                         " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET os = excluded.os,"

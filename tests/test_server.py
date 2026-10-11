@@ -175,3 +175,24 @@ def test_cli(server, monkeypatch, capsys):
     assert "access" in run("--json", "show", "cli1")
     run("destroy", "-y", "cli1")
     assert "cli1" not in run("vms")
+
+
+def test_image_registration_allows_dotted_names(server):
+    cfg, db, tokens = server
+    base = cfg.base_url
+    h = {"Authorization": f"Bearer {tokens['admin']}", "X-Strata": "1"}
+    # a dotted name like ubuntu-24.04 is valid for an image
+    r = httpx.post(f"{base}/api/images", headers=h,
+                   json={"name": "ubuntu-24.04", "os": "linux", "volume": "ubuntu-24.04.qcow2",
+                         "username": "strata", "description": "Ubuntu 24.04"})
+    assert r.status_code == 200, r.text
+    assert r.json()["image"] == "ubuntu-24.04"
+    assert any(i["name"] == "ubuntu-24.04" for i in httpx.get(f"{base}/api/images", headers=h).json())
+    # but a traversal-ish or spaced name is still rejected
+    for bad in ("../etc", "bad name", "UPPER"):
+        rr = httpx.post(f"{base}/api/images", headers=h,
+                        json={"name": bad, "os": "linux", "volume": "x.qcow2", "username": "s"})
+        assert rr.status_code == 400, f"{bad!r} should be rejected"
+    # non-admins cannot register images
+    assert httpx.post(f"{base}/api/images", headers={"Authorization": f"Bearer {tokens['alice']}", "X-Strata": "1"},
+                      json={"name": "x", "os": "linux", "volume": "x.qcow2", "username": "s"}).status_code == 403
