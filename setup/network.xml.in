@@ -1,14 +1,14 @@
-<!-- VM network: routing is decided only by the Strata firewall,
-     VMs cannot talk to each other, no DNS served by the host. -->
+<!-- Routing is decided only by the Strata firewall, VMs cannot talk to each other,
+     no DNS served by the host. Rendered twice: VM network and image-build network. -->
 <network xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'>
-  <name>strata</name>
+  <name>@NET_NAME@</name>
   <forward mode='open'/>
-  <bridge name='@BRIDGE@' stp='off' delay='0'/>
+  <bridge name='@NET_BRIDGE@' stp='off' delay='0'/>
   <port isolated='yes'/>
   <dns enable='no'/>
-  <ip address='@GATEWAY@' prefix='24'>
+  <ip address='@NET_PREFIX@.1' prefix='24'>
     <dhcp>
-      <range start='@DHCP_START@' end='@DHCP_END@'/>
+      <range start='@NET_PREFIX@.100' end='@NET_PREFIX@.250'/>
     </dhcp>
   </ip>
   <dnsmasq:options>

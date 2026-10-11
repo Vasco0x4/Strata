@@ -1,7 +1,11 @@
 #!/usr/sbin/nft -f
 # Strata host firewall.
-# Rule: nothing leaves a VM, except DHCP to the host and, for VMs explicitly
-# allowed, the internet (never a private network).
+#
+# Two bridges:
+#   @BRIDGE@   VMs. Nothing leaves a VM, except DHCP to the host and, for VMs
+#              explicitly allowed, the internet (never a private network).
+#   @BUILD_BRIDGE@   image builds from official media: internet only, never a private network.
+#
 # The internet_vms set and the port_forwards map are filled by the Strata service.
 
 table inet strata
@@ -29,19 +33,20 @@ table inet strata {
 	# To the host itself: DHCP only
 	chain input {
 		type filter hook input priority filter - 10; policy accept;
-		iifname "@BRIDGE@" udp sport 68 udp dport 67 accept
-		iifname "@BRIDGE@" drop
+		iifname { "@BRIDGE@", "@BUILD_BRIDGE@" } udp sport 68 udp dport 67 accept
+		iifname { "@BRIDGE@", "@BUILD_BRIDGE@" } drop
 	}
 
 	# Through the host
 	chain forward {
 		type filter hook forward priority filter - 10; policy accept;
-		iifname "@BRIDGE@" ct state established,related accept
-		oifname "@BRIDGE@" ct state established,related accept
+		iifname { "@BRIDGE@", "@BUILD_BRIDGE@" } ct state established,related accept
+		oifname { "@BRIDGE@", "@BUILD_BRIDGE@" } ct state established,related accept
 		oifname "@BRIDGE@" ct status dnat accept
 		iifname "@BRIDGE@" oifname "@LAN_IF@" ip saddr @internet_vms ip daddr != @private_nets accept
-		iifname "@BRIDGE@" drop
-		oifname "@BRIDGE@" drop
+		iifname "@BUILD_BRIDGE@" oifname "@LAN_IF@" ip daddr != @private_nets accept
+		iifname { "@BRIDGE@", "@BUILD_BRIDGE@" } drop
+		oifname { "@BRIDGE@", "@BUILD_BRIDGE@" } drop
 	}
 
 	chain prerouting {
@@ -51,6 +56,6 @@ table inet strata {
 
 	chain postrouting {
 		type nat hook postrouting priority srcnat; policy accept;
-		ip saddr @SUBNET@ oifname "@LAN_IF@" masquerade
+		ip saddr { @SUBNET@, @BUILD_SUBNET@ } oifname "@LAN_IF@" masquerade
 	}
 }

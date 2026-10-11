@@ -4,7 +4,8 @@
 # What it does:
 #   1. installs the Strata firewall and makes libvirt depend on it (no firewall, no VMs)
 #   2. installs QEMU/KVM, libvirt, OVMF, swtpm, libguestfs
-#   3. creates the isolated VM network and stops libvirt's "default" network
+#   3. creates the isolated VM network and the image-build network (internet only),
+#      and stops libvirt's "default" network
 #   4. grows the root LVM volume into free space (EXTEND_LVM=no to skip)
 #   5. creates the "strata" service account, its config and storage pools
 #   6. installs the root helper that updates the firewall (the service never runs as root)
@@ -13,12 +14,14 @@
 #   9. checks everything
 #
 # Settings (environment variables):
-#   LAN_IF, BRIDGE, SUBNET_PREFIX, FORWARD_PORTS, DEV_USER, EXTEND_LVM
+#   LAN_IF, BRIDGE, SUBNET_PREFIX, BUILD_BRIDGE, BUILD_PREFIX, FORWARD_PORTS, DEV_USER, EXTEND_LVM
 set -euo pipefail
 
 LAN_IF="${LAN_IF:-$(ip -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')}"
 BRIDGE="${BRIDGE:-strata0}"
 SUBNET_PREFIX="${SUBNET_PREFIX:-10.99.0}"
+BUILD_BRIDGE="${BUILD_BRIDGE:-stratab0}"
+BUILD_PREFIX="${BUILD_PREFIX:-10.99.1}"
 FORWARD_PORTS="${FORWARD_PORTS:-30000-30999}"
 DEV_USER="${DEV_USER:-${SUDO_USER:-}}"
 EXTEND_LVM="${EXTEND_LVM:-yes}"
@@ -38,10 +41,10 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 [[ "$FORWARD_PORTS" =~ ^[0-9]+-[0-9]+$ ]] || die "FORWARD_PORTS must look like 30000-30999"
 LAN_IP=$(ip -4 -o addr show dev "$LAN_IF" | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
-render() {  # render <template> <destination>
-	sed -e "s|@LAN_IF@|$LAN_IF|g" -e "s|@BRIDGE@|$BRIDGE|g" \
-	    -e "s|@SUBNET@|$SUBNET_PREFIX.0/24|g" -e "s|@GATEWAY@|$SUBNET_PREFIX.1|g" \
-	    -e "s|@DHCP_START@|$SUBNET_PREFIX.100|g" -e "s|@DHCP_END@|$SUBNET_PREFIX.250|g" \
+render() {  # render <template> <destination> [network name] [bridge] [prefix]
+	sed -e "s|@LAN_IF@|$LAN_IF|g" -e "s|@BRIDGE@|$BRIDGE|g" -e "s|@BUILD_BRIDGE@|$BUILD_BRIDGE|g" \
+	    -e "s|@SUBNET@|$SUBNET_PREFIX.0/24|g" -e "s|@BUILD_SUBNET@|$BUILD_PREFIX.0/24|g" \
+	    -e "s|@NET_NAME@|${3:-}|g" -e "s|@NET_BRIDGE@|${4:-}|g" -e "s|@NET_PREFIX@|${5:-}|g" \
 	    "$1" > "$2"
 }
 
@@ -97,10 +100,13 @@ if virsh -q net-info default >/dev/null 2>&1; then
 	virsh -q net-destroy default >/dev/null 2>&1 || true
 	virsh -q net-autostart default --disable
 fi
-render "$HERE/network.xml.in" "$CONF_DIR/network.xml"
-virsh -q net-info strata >/dev/null 2>&1 || virsh -q net-define "$CONF_DIR/network.xml"
-virsh -q net-autostart strata
-virsh -q net-info strata | grep -q '^Active:.*yes' || virsh -q net-start strata
+for net in "strata $BRIDGE $SUBNET_PREFIX" "strata-build $BUILD_BRIDGE $BUILD_PREFIX"; do
+	read -r name bridge prefix <<< "$net"
+	render "$HERE/network.xml.in" "$CONF_DIR/network-$name.xml" "$name" "$bridge" "$prefix"
+	virsh -q net-info "$name" >/dev/null 2>&1 || virsh -q net-define "$CONF_DIR/network-$name.xml"
+	virsh -q net-autostart "$name"
+	virsh -q net-info "$name" | grep -q '^Active:.*yes' || virsh -q net-start "$name"
+done
 
 step "4/9 Disk"
 if [[ "$EXTEND_LVM" == yes ]]; then
@@ -140,8 +146,8 @@ EOF
 fi
 chown root:strata "$CONF_DIR/strata.toml"
 chmod 0640 "$CONF_DIR/strata.toml"
-install -d -m 0711 "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/vms"
-for pool in images vms; do
+install -d -m 0711 "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/vms" "$DATA_DIR/iso"
+for pool in images vms iso; do
 	name="strata-$pool"
 	virsh -q pool-info "$name" >/dev/null 2>&1 || virsh -q pool-define-as "$name" dir --target "$DATA_DIR/$pool"
 	virsh -q pool-autostart "$name"
@@ -268,6 +274,7 @@ systemctl is-active -q virtqemud 2>/dev/null && daemon=virtqemud
 check "Strata firewall loaded" nft list table inet strata
 check "$daemon requires the firewall" bash -c "systemctl show -p Requires $daemon.service | grep -q strata-firewall"
 check "network 'strata' active" bash -c "virsh -q net-info strata | grep -q '^Active:.*yes'"
+check "network 'strata-build' active" bash -c "virsh -q net-info strata-build | grep -q '^Active:.*yes'"
 check "network 'default' stopped" bash -c "! virsh -q net-info default 2>/dev/null | grep -q '^Active:.*yes'"
 check "firewall helper listening" systemctl is-active -q strata-netctl.socket
 check "AppArmor enabled" aa-enabled -q
