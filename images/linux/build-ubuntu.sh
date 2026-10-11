@@ -22,10 +22,13 @@ gpgv --keyring "$KEYRING" "$work/SHA256SUMS.gpg" "$work/SHA256SUMS" 2>/dev/null 
 	|| die "signature check failed on SHA256SUMS (wrong keyring or tampered file)"
 log "SHA256SUMS signature OK (Ubuntu cloud image keyring)"
 
-img_file=$(grep -oE '[a-z]+-server-cloudimg-amd64\.img' "$work/SHA256SUMS" | head -n1)
-[[ -n "$img_file" ]] || die "could not find a cloud image name for $RELEASE"
+# The releases/<version>/ path names the image by version, e.g.
+# ubuntu-24.04-server-cloudimg-amd64.img. Build the name and confirm it is listed.
+img_file="ubuntu-$RELEASE-server-cloudimg-amd64.img"
+sum_line=$(grep " \*$img_file\$" "$work/SHA256SUMS" || true)
+[[ -n "$sum_line" ]] || die "$img_file is not listed in SHA256SUMS for $RELEASE"
 fetch "$BASE/$img_file" "$work/$img_file"
-verify_sha256 "$work/$img_file" "$(grep " \*\?$img_file\$" "$work/SHA256SUMS" | cut -d' ' -f1)"
+verify_sha256 "$work/$img_file" "$(echo "$sum_line" | cut -d' ' -f1)"
 
 log "preparing disk ($DISK_GB GB)"
 tmp="$work/build.qcow2"
