@@ -81,15 +81,32 @@ virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4
 	sleep 1
   done ) &
 
+# Storage watchdog. On a thin-provisioned host we cannot see the backing store fill up from
+# inside this VM (an exhausted Proxmox datastore shows as plenty-free here, then I/O fails and
+# the host crashes). So bound how much the install may write: if the disk grows past
+# MAX_BUILD_GB, force-stop the build instead of risking the host. Raise it when space is ample.
+MAX_BUILD_GB="${MAX_BUILD_GB:-20}"
+abort_flag="$work/.storage-abort"; rm -f "$abort_flag"
+( while $VIRSH domstate "$dom" 2>/dev/null | grep -q running; do
+	used_mb=$(du -m "$disk" 2>/dev/null | cut -f1)
+	if [[ -n "$used_mb" ]] && (( used_mb > MAX_BUILD_GB * 1024 )); then
+		touch "$abort_flag"; $VIRSH destroy "$dom" >/dev/null 2>&1; break
+	fi
+	sleep 20
+  done ) &
+
 # From here, leave the VM in place on failure so it can be inspected (screenshot, console)
 # instead of being destroyed by the EXIT trap.
 trap - EXIT
 log "waiting for the unattended install to finish and power off (up to 90 min)"
 if ! wait_shutoff "$dom" 5400; then
+	[[ -f "$abort_flag" ]] && die "storage watchdog stopped the build: the disk exceeded ${MAX_BUILD_GB} GB.
+  Free space (or raise MAX_BUILD_GB) and rerun."
 	die "$dom did not power off in time. It was left running for inspection:
   sudo virsh -c qemu:///system screenshot $dom /tmp/win.ppm
   sudo virsh -c qemu:///system start $dom   (if already off)"
 fi
+[[ -f "$abort_flag" ]] && die "storage watchdog stopped the build: the disk exceeded ${MAX_BUILD_GB} GB."
 cleanup_domain "$dom"
 trap - EXIT
 
