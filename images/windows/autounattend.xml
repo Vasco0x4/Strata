@@ -54,7 +54,12 @@
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <ComputerName>strata</ComputerName>
-      <!-- Block automatic BitLocker device encryption before it can start -->
+    </component>
+    <!-- Block automatic BitLocker device encryption before it can start. RunSynchronous belongs
+         to Microsoft-Windows-Deployment, NOT Shell-Setup (putting it under Shell-Setup makes the
+         whole answer file invalid, which aborts Setup with "restarted unexpectedly"). -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <RunSynchronous>
         <RunSynchronousCommand wcm:action="add"><Order>1</Order>
           <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>
