@@ -29,7 +29,12 @@ fi
 
 echo "==> (re)starting stratad"
 systemctl restart stratad.service
-sleep 2
+# Wait for the service to actually be serving (admin socket present), not just started,
+# so a command run right after deploy does not race the restart.
+for _ in $(seq 1 30); do
+	[[ -S /run/strata/admin.sock ]] && break
+	sleep 0.5
+done
 if systemctl is-active -q stratad.service; then
 	echo "Strata is running."
 	token=/var/lib/strata/admin-token

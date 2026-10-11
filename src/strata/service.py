@@ -134,7 +134,10 @@ class Service:
         used_ports = set()
         for r in self.db.all("SELECT ssh_port, rdp_port FROM vms"):
             used_ports.update(p for p in (r["ssh_port"], r["rdp_port"]) if p)
-        ip = next((f"{self.cfg.subnet_prefix}.{i}" for i in range(10, 100)
+        # Reserved IPs must fall inside the network's DHCP range (.100-.250 in network.xml.in);
+        # dnsmasq ignores a fixed reservation outside its range, so the VM would get a pool
+        # address while the firewall and forwards expect the reserved one.
+        ip = next((f"{self.cfg.subnet_prefix}.{i}" for i in range(100, 250)
                    if f"{self.cfg.subnet_prefix}.{i}" not in used_ips), None)
         if ip is None:
             raise Conflict("no free address left for a new VM", "destroy unused VMs")
