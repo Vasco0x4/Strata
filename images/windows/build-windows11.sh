@@ -57,16 +57,27 @@ trap 'cleanup_domain "$dom"' EXIT
 log "installing Windows (unattended; this takes several minutes)"
 # E: must be the virtio ISO (autounattend.xml and provision.ps1 reference E:\...).
 # CD order defines drive letters, so attach virtio before the answer media.
+# Boot the Windows ISO first (order 1) so the installer starts without a boot-menu detour;
+# the disk is order 2 so that on the reboots during setup — once we stop pressing keys — the
+# "Press any key to boot from CD" prompt times out and the machine boots the installed Windows.
 virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4 \
 	--cpu host-passthrough --machine q35 \
 	--boot uefi,loader.secure=yes --features smm.state=on --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-	--disk "$disk",format=qcow2,bus=virtio,boot.order=1 \
-	--disk "$win_iso",device=cdrom,boot.order=2 \
+	--disk "$win_iso",device=cdrom,boot.order=1 \
+	--disk "$disk",format=qcow2,bus=virtio,boot.order=2 \
 	--disk "$work/virtio-win.iso",device=cdrom \
 	--disk "$work/answer.iso",device=cdrom \
 	--network network="$BUILD_NET",model=virtio \
 	--osinfo "name=win11,require=off" --graphics vnc,listen=socket --noautoconsole \
 	--channel unix,target_type=virtio,name=org.qemu.guest_agent.0
+
+# The Windows ISO shows "Press any key to boot from CD or DVD" for only a few seconds. Spam
+# Enter for the first ~90 s to get past it into Setup, then stop so later reboots fall through
+# to the installed disk. Runs in the background while we wait for the install to finish.
+( for _ in $(seq 1 90); do
+	$VIRSH send-key "$dom" --codeset linux KEY_ENTER >/dev/null 2>&1 || true
+	sleep 1
+  done ) &
 
 log "waiting for the unattended install to finish and power off (up to 60 min)"
 wait_shutoff "$dom" 3600
