@@ -15,12 +15,15 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 need() { for c in "$@"; do command -v "$c" >/dev/null || die "missing command: $c"; done; }
 
-# fetch URL DEST -- download only if absent, follow redirects, fail on HTTP errors
+# fetch URL DEST -- download only if absent, follow redirects, fail on HTTP errors.
+# Resumable (-C -) with generous retries: large vendor downloads (the ~8 GB Windows ISO)
+# drop mid-transfer, and without resume curl would restart from zero and may never finish.
 fetch() {
 	local url=$1 dest=$2
 	[[ -s "$dest" ]] && { log "have $(basename "$dest")"; return; }
 	log "downloading $(basename "$dest")"
-	curl -fL --retry 3 --retry-delay 5 -A "Mozilla/5.0" -o "$dest.part" "$url"
+	curl -fL -C - --retry 10 --retry-delay 5 --retry-all-errors \
+		--connect-timeout 30 -A "Mozilla/5.0" -o "$dest.part" "$url"
 	mv "$dest.part" "$dest"
 }
 
