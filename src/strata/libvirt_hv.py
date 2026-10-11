@@ -168,14 +168,22 @@ class LibvirtHypervisor:
         vol = pool.createXML(f"""<volume>
   <name>{name}.{n}.qcow2</name>
   <capacity unit='bytes'>{capacity}</capacity>
-  <target><format type='qcow2'/><permissions><mode>0644</mode></permissions></target>
+  <target><format type='qcow2'/><permissions><mode>0660</mode></permissions></target>
   <backingStore><path>{backing}</path><format type='qcow2'/></backingStore>
 </volume>""", 0)
         return vol.path()
 
     def _set_disk(self, dom: libvirt.virDomain, path: str) -> str:
         xml = ET.fromstring(dom.XMLDesc(libvirt.VIR_DOMAIN_XML_INACTIVE | libvirt.VIR_DOMAIN_XML_SECURE))
-        xml.find("devices/disk[@device='disk']/source").set("file", path)
+        disk = xml.find("devices/disk[@device='disk']")
+        disk.find("source").set("file", path)
+        # Drop the stale <backingStore>: it describes the previous disk's chain, and libvirt
+        # (and its AppArmor helper) would trust that truncated chain instead of re-probing the
+        # new qcow2 — leaving the real backing files, e.g. the base image, out of the profile,
+        # so qemu is denied access and the VM fails to start. Removing it makes libvirt re-detect
+        # the full chain from the file, exactly as it does for a freshly created VM.
+        for bs in disk.findall("backingStore"):
+            disk.remove(bs)
         new = ET.tostring(xml, encoding="unicode")
         self.conn.defineXML(new)
         return new

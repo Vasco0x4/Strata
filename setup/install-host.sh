@@ -146,13 +146,34 @@ EOF
 fi
 chown root:strata "$CONF_DIR/strata.toml"
 chmod 0640 "$CONF_DIR/strata.toml"
-install -d -m 0711 "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/vms" "$DATA_DIR/iso"
+install -d -m 0711 "$DATA_DIR"
+# Pools are setgid to the kvm group so every disk is owned :kvm and group-writable: qemu
+# (libvirt-qemu:kvm) can read backing images and write overlays, and the strata service
+# (also in kvm) can read frozen disks for offline diffs — without libvirt relabeling
+# (disabled below), which cannot track Strata's out-of-band overlay/snapshot chains.
+install -d -m 2775 -o root -g kvm "$DATA_DIR/images" "$DATA_DIR/vms" "$DATA_DIR/iso"
 for pool in images vms iso; do
 	name="strata-$pool"
 	virsh -q pool-info "$name" >/dev/null 2>&1 || virsh -q pool-define-as "$name" dir --target "$DATA_DIR/$pool"
 	virsh -q pool-autostart "$name"
 	virsh -q pool-info "$name" | grep -q '^State:.*running' || virsh -q pool-start "$name"
 done
+
+# Deterministic disk ownership instead of libvirt's dynamic relabeling. Strata creates and
+# re-chains overlays out of band (external snapshots, forks, reverts); libvirt's DAC/AppArmor
+# label bookkeeping cannot follow that and ends up denying qemu access to backing files. With
+# relabeling off and the setgid-kvm pools above, every disk is correctly owned from creation.
+qconf=/etc/libvirt/qemu.conf
+for kv in "dynamic_ownership = 0" "remember_owner = 0" "namespaces = [ ]"; do
+	key=${kv%% *}
+	if grep -qE "^\s*$key\s*=" "$qconf"; then
+		sed -i "s|^\s*$key\s*=.*|$kv|" "$qconf"
+	else
+		echo "$kv" >> "$qconf"
+	fi
+done
+# Apply the qemu.conf change to whichever qemu driver is in use (monolithic or modular).
+systemctl try-restart libvirtd virtqemud 2>/dev/null || true
 
 # Prebuilt libguestfs appliance for offline diffs. Built once as root here so the
 # unprivileged service never needs to read the root-only host kernel in /boot.
