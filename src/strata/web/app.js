@@ -190,6 +190,10 @@ async function vmPage(name) {
   const snapName = el("input", { placeholder: "before-test", pattern: "[a-z0-9][a-z0-9-]*" });
   const withMemory = el("input", { type: "checkbox", checked: true });
   const snapBtn = el("button", { type: "submit" }, "Save state");
+  const diffA = el("select");
+  const diffB = el("select");
+  const diffBtn = el("button", { type: "submit" }, "Compare");
+  const diffOut = el("div", { class: "mono", style: "margin-top:10px;max-height:320px;overflow:auto" });
 
   const powerBtn = (label, action, cls = "ghost") => {
     const b = el("button", { class: cls, onclick: () => act(b, () => api("POST", `${base}/power`, { action }), `${label}: done`).then(refresh) }, label);
@@ -220,7 +224,17 @@ async function vmPage(name) {
           if (await act(snapBtn, () => api("POST", `${base}/snapshots`, { name: snapName.value, with_memory: withMemory.checked }), "State saved")) { snapName.value = ""; refresh(); }
         } }, el("h2", {}, "Snapshots"),
           el("div", { class: "row" }, el("label", { style: "flex:1" }, "Name", snapName), el("label", { class: "check" }, withMemory, "with memory"), snapBtn),
-          el("table", { style: "margin-top:10px" }, snaps)))));
+          el("table", { style: "margin-top:10px" }, snaps)),
+        el("form", { class: "panel", onsubmit: async (ev) => {
+          ev.preventDefault();
+          if (diffA.value === diffB.value) return toast("Pick two different states", true);
+          diffOut.replaceChildren(el("span", { class: "muted" }, "Comparing… (the VM is read offline)"));
+          const res = await act(diffBtn, () => api("GET",
+            `${base}/diff?from=${encodeURIComponent(diffA.value)}&to=${encodeURIComponent(diffB.value)}`));
+          if (res) renderDiff(diffOut, res);
+        } }, el("h2", {}, "Compare states"),
+          el("div", { class: "row" }, el("label", {}, "From", diffA), el("label", {}, "To", diffB), diffBtn),
+          diffOut))));
 
   async function refresh() {
     vm = await api("GET", base);
@@ -252,6 +266,13 @@ async function vmPage(name) {
         el("td", { style: "text-align:right;white-space:nowrap" }, revert, " ", fork, " ", del));
     }));
     if (!list.length) snaps.append(el("tr", {}, el("td", { class: "muted" }, "No saved state yet.")));
+    const opts = list.map(s => s.name);
+    for (const sel of [diffA, diffB]) {
+      const keep = sel.value;
+      sel.replaceChildren(...opts.map(n => el("option", { value: n }, n)));
+      if (opts.includes(keep)) sel.value = keep;
+    }
+    if (opts.length > 1 && diffB.value === diffA.value) diffB.value = opts[opts.length - 1];
     const hist = await api("GET", `/api/history?vm=${encodeURIComponent(name)}&limit=40`);
     journal.replaceChildren(...hist.map(j => el("tr", {},
       el("td", { class: "muted", style: "white-space:nowrap" }, ago(j.ts)), el("td", {}, j.actor),
@@ -261,6 +282,19 @@ async function vmPage(name) {
   await refresh();
   connectScreen(screen, name);
   timers.push(setInterval(refresh, 5000));
+}
+
+function renderDiff(out, res) {
+  const mark = { added: ["+", "var(--ok)"], deleted: ["−", "var(--danger)"], changed: ["~", "var(--warn)"] };
+  const header = el("div", { style: "margin-bottom:8px" },
+    el("strong", {}, `${res.counts.added} added · ${res.counts.deleted} deleted · ${res.counts.changed} changed`),
+    res.truncated ? el("span", { class: "muted" }, `  (showing first ${res.changes.length})`) : null);
+  const lines = res.changes.map(c => {
+    const [sign, color] = mark[c.change] || ["?", "var(--muted)"];
+    return el("div", {}, el("span", { style: `color:${color};font-weight:700` }, sign + " "),
+      el("span", {}, c.path), c.details ? el("span", { class: "muted" }, "  " + c.details) : null);
+  });
+  out.replaceChildren(header, ...(lines.length ? lines : [el("span", { class: "muted" }, "No file differences.")]));
 }
 
 function summarize(json, max) {

@@ -64,6 +64,8 @@ class Hypervisor(Protocol):
     def revert(self, name: str, snap: str, disk: str) -> None:
         """Go back to the state frozen in disk (and its memory, if the snapshot has some)."""
     def delete_snapshot(self, name: str, snap: str) -> None: ...
+    def diff_disks(self, disk_a: str, disk_b: str) -> list[dict]:
+        """Offline file-level diff between two frozen disks: added, deleted and changed paths."""
 
     # Network
     def add_dhcp_host(self, mac: str, ip: str, name: str) -> None: ...

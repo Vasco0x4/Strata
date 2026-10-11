@@ -80,6 +80,9 @@ class FakeHypervisor:
     def delete_snapshot(self, name, snap):
         del self.vms[name]["snaps"][snap]
 
+    def diff_disks(self, disk_a, disk_b):
+        return [{"change": "added", "path": "/tmp/new", "details": "regular 0644"}]
+
     def add_dhcp_host(self, mac, ip, name):
         self.dhcp.add((mac, ip, name))
 

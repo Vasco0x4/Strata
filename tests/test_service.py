@@ -169,3 +169,16 @@ def test_names_validated(env):
     svc.create_vm(alice, image="ubuntu", name="a1")
     with pytest.raises(StrataError):
         svc.snapshot(alice, "a1", "bad name")
+
+
+def test_diff(env):
+    svc, hv, net, caller = env
+    alice = caller("alice")
+    svc.create_vm(alice, image="ubuntu", name="a1")
+    svc.snapshot(alice, "a1", "before")
+    svc.snapshot(alice, "a1", "after")
+    out = svc.diff(alice, "a1", "before", "after")
+    assert out["total"] == 1 and out["counts"]["added"] == 1
+    assert out["changes"][0]["path"] == "/tmp/new"
+    with pytest.raises(NotFound):
+        svc.diff(alice, "a1", "before", "missing")

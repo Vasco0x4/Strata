@@ -181,3 +181,12 @@ def register(mcp: MCPServer, svc: Service, db: Database) -> None:
     async def history(vm: str | None = None, limit: int = 50) -> list[dict]:
         """Journal of actions, newest first: on one VM, or all of yours."""
         return await run(svc.history, vm=vm, limit=limit)
+
+    @mcp.tool()
+    async def diff(vm: str, snapshot_a: str, snapshot_b: str) -> dict:
+        """What changed on disk between two snapshots: files added, deleted or changed.
+
+        Works offline, so take a snapshot before a change and another after, then diff them
+        to see exactly what the change touched. Also covers the Windows registry hive files.
+        """
+        return await run(svc.diff, vm, snapshot_a, snapshot_b)

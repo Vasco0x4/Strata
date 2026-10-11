@@ -445,6 +445,19 @@ class Service:
              internet: bool = False) -> dict:
         return self.create_vm(caller, from_vm=vm, from_snapshot=snapshot, name=name, internet=internet)
 
+    @journaled("diff", summarize=lambda r: {"changes": r["total"]})
+    def diff(self, caller: Caller, vm: str, snapshot_a: str, snapshot_b: str,
+             limit: int = 2000) -> dict:
+        """What changed on disk between two snapshots of a VM (added, deleted, changed files)."""
+        row = self._own(caller, vm)
+        disk_a = self._snap(row, snapshot_a)["disk"]
+        disk_b = self._snap(row, snapshot_b)["disk"]
+        changes = self.hv.diff_disks(disk_a, disk_b)
+        total = len(changes)
+        counts = {k: sum(1 for c in changes if c["change"] == k) for k in ("added", "deleted", "changed")}
+        return {"vm": vm, "from": snapshot_a, "to": snapshot_b, "total": total,
+                "counts": counts, "truncated": total > limit, "changes": changes[:limit]}
+
     # ---------- journal and housekeeping ----------
 
     def history(self, caller: Caller, vm: str | None = None, limit: int = 50) -> list[dict]:

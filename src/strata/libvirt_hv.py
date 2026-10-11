@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import io
+import subprocess
 import json
 import logging
 import threading
@@ -440,6 +441,36 @@ class LibvirtHypervisor:
         pool.refresh(0)
         if f"{name}.{snap}.mem" in pool.listVolumes():
             pool.storageVolLookupByName(f"{name}.{snap}.mem").delete(0)
+
+    def diff_disks(self, disk_a: str, disk_b: str) -> list[dict]:
+        # virt-diff walks both disks read-only and reports what differs. It needs the
+        # whole qcow2 backing chain, which resolves automatically from the overlay paths.
+        cmd = ["virt-diff", "--atime", "-a", disk_a, "-A", disk_b]
+        env = {"LIBGUESTFS_BACKEND": "direct", "PATH": "/usr/bin:/bin", "HOME": "/tmp"}
+        try:
+            out = subprocess.run(cmd, capture_output=True, timeout=1800, env=env)
+        except FileNotFoundError:
+            raise StrataError("virt-diff is not installed", "install libguestfs-tools") from None
+        except subprocess.TimeoutExpired:
+            raise StrataError("comparison timed out", "the disks are very large") from None
+        if out.returncode != 0:
+            raise StrataError("comparison failed: " + out.stderr.decode(errors="replace")[:400])
+        return self._parse_virt_diff(out.stdout.decode(errors="replace"))
+
+    @staticmethod
+    def _parse_virt_diff(text: str) -> list[dict]:
+        # Lines look like: "+ - 0644  1234  /path"  (added), "- ..." (deleted), "= ..." (changed).
+        marks = {"+": "added", "-": "deleted", "=": "changed"}
+        changes: list[dict] = []
+        for line in text.splitlines():
+            if len(line) < 2 or line[0] not in marks or line[1] != " ":
+                continue
+            rest = line[2:].strip()
+            parts = rest.split(None, 3)
+            path = parts[-1] if parts else rest
+            details = " ".join(parts[:-1]) if len(parts) > 1 else ""
+            changes.append({"change": marks[line[0]], "path": path, "details": details})
+        return changes
 
     # ---------- network ----------
 

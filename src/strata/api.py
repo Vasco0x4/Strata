@@ -224,6 +224,8 @@ class Api:
                                                         **allowed(b, "name", "internet"))), methods=["POST"]),
             Route(vm + "/download", e(download)),
             Route(vm + "/rdp", e(rdp)),
+            Route(vm + "/diff", e(lambda r, b: s.diff(self.caller(r), p(r, "vm"),
+                  r.query_params["from"], r.query_params["to"]))),
             WebSocketRoute(vm + "/console", self.console),
         ]
         return routes

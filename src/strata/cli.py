@@ -192,6 +192,8 @@ def parser() -> argparse.ArgumentParser:
     add("internet", simple("POST", lambda a: f"/api/vms/{a.vm}/internet", lambda a: {"enabled": a.state == "on"}),
         "allow or block internet for a VM", vm, (("state",), {"choices": ["on", "off"]}))
     add("destroy", cmd_destroy, "delete a VM", vm, (("-y", "--yes"), {"action": "store_true"}))
+    add("diff", simple("GET", lambda a: f"/api/vms/{a.vm}/diff?from={a.snapshot_a}&to={a.snapshot_b}"),
+        "what changed on disk between two snapshots", (("vm",), {}), (("snapshot_a",), {}), (("snapshot_b",), {}))
     add("history", simple("GET", lambda a: f"/api/history?limit={a.n}" + (f"&vm={a.vm}" if a.vm else "")),
         "journal of actions", (("vm",), {"nargs": "?"}), (("-n",), {"type": int, "default": 30}))
     add("agents", simple("GET", "/api/agents"), "list agents (admin)")
