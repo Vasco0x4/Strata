@@ -58,7 +58,14 @@ Each agent gets a ready-to-paste line:
 claude mcp add --transport http strata http://<host>:8080/mcp --header "Authorization: Bearer strata_…"
 ```
 
-Once you have verified isolation from inside a VM, remove the build-time access:
+Verify the whole thing — core actions and, above all, that a VM cannot reach the host,
+the LAN, the hypervisor or the internet (set `LAN_PROBE` to an address on your LAN):
+
+```bash
+LAN_PROBE=10.50.0.1 bash setup/smoke-test.sh
+```
+
+Once that passes, remove the build-time access:
 
 ```bash
 sudo bash setup/lockdown.sh

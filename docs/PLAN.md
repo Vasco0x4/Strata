@@ -35,7 +35,7 @@ or long-lived. Nothing leaves a VM without explicit consent.
 0. **Prepare (human)**: change the password, dedicated VLAN or Proxmox firewall rules for
    the host, Proxmox snapshot of the host.
 1. **Host**: `setup/install-host.sh` (packages, disk, firewall, isolated network, service
-   account). Test: a small Linux VM cannot reach anything.
+   account). Test: `setup/smoke-test.sh` — a Linux VM cannot reach anything it shouldn't.
 2. **Images**: automated builds of Windows 11 (evaluation) and Ubuntu.
 3. **Core**: thin-copy VMs, snapshots (with or without memory), forks from a snapshot,
    disposable or permanent VMs, journal, quotas, tokens.
