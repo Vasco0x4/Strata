@@ -428,8 +428,9 @@ class Service:
         snap = self._snap(row, snapshot)
         with self._vm_locks[vm]:
             self.hv.revert(vm, snapshot, snap["disk"])
-            if snap["with_memory"]:
-                self.hv.wait_ready(vm, 120)
+            # A revert boots the VM (from the memory state, or fresh from the frozen disk);
+            # wait until the guest agent answers so the VM is actually usable on return.
+            self.hv.wait_ready(vm, READY_TIMEOUT[row["os"]])
         return {"vm": vm, "reverted_to": snapshot, "state": self.hv.state(vm)}
 
     @journaled("delete_snapshot")
