@@ -423,7 +423,7 @@ class Service:
         row = self._own(caller, vm)
         snap = self._snap(row, snapshot)
         with self._vm_locks[vm]:
-            self.hv.revert(vm, snapshot)
+            self.hv.revert(vm, snapshot, snap["disk"])
             if snap["with_memory"]:
                 self.hv.wait_ready(vm, 120)
         return {"vm": vm, "reverted_to": snapshot, "state": self.hv.state(vm)}

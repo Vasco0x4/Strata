@@ -73,7 +73,8 @@ class FakeHypervisor:
         self.vms[name]["snaps"][snap] = path
         return path
 
-    def revert(self, name, snap):
+    def revert(self, name, snap, disk):
+        assert self.vms[name]["snaps"][snap] == disk
         self.vms[name]["reverted"] = snap
 
     def delete_snapshot(self, name, snap):

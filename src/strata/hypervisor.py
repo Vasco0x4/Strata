@@ -59,7 +59,8 @@ class Hypervisor(Protocol):
     # States
     def snapshot(self, name: str, snap: str, with_memory: bool) -> str:
         """Freeze the current state; return the path of the frozen disk."""
-    def revert(self, name: str, snap: str) -> None: ...
+    def revert(self, name: str, snap: str, disk: str) -> None:
+        """Go back to the state frozen in disk (and its memory, if the snapshot has some)."""
     def delete_snapshot(self, name: str, snap: str) -> None: ...
 
     # Network
