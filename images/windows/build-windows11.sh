@@ -15,7 +15,6 @@ RAM_MB="${RAM_MB:-8192}"
 # Official Microsoft eval redirect (English, US), and the stable virtio-win ISO.
 WIN_ISO_URL="${WIN_ISO_URL:-https://go.microsoft.com/fwlink/?LinkId=2382600&clcid=0x409&culture=en-us&country=us}"
 VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
-VIRTIO_SUM_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso-CHECKSUM"
 
 need curl qemu-img virt-install xorriso
 work="$ISO_DIR/win11"
@@ -36,16 +35,10 @@ fi
 
 log "fetching virtio-win driver ISO"
 fetch "$VIRTIO_URL" "$work/virtio-win.iso"
-expect_min_size "$work/virtio-win.iso" 100000000   # a real ISO is ~800 MB, not an HTML error page
-fetch "$VIRTIO_SUM_URL" "$work/virtio-win.iso-CHECKSUM"
-# The CHECKSUM file lists several algorithms; take the SHA256 line for this ISO.
-# '|| true' so set -e does not abort if the grep finds nothing (then we just skip the check).
-sum=$(grep -iA3 'SHA256' "$work/virtio-win.iso-CHECKSUM" | grep -oiE '[0-9a-f]{64}' | head -n1 || true)
-if [[ -n "$sum" ]]; then
-	verify_sha256 "$work/virtio-win.iso" "$sum"
-else
-	log "no SHA256 found in CHECKSUM, skipping virtio checksum verification"
-fi
+# The stable-virtio link redirects to a versioned dir where the per-file CHECKSUM 404s, so we
+# validate the ISO by size instead: a real virtio-win ISO is ~800 MB, an error/anti-bot page
+# is a few KB. It comes from the official fedorapeople HTTPS host.
+expect_min_size "$work/virtio-win.iso" 100000000
 
 log "building the unattended answer media"
 answer="$work/answer"
