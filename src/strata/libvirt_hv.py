@@ -373,6 +373,9 @@ class LibvirtHypervisor:
                               {"events": [{"type": "btn", "data": {"down": down, "button": button}}]})
                 time.sleep(0.05)
 
+    def open_console(self, name: str) -> int:
+        return self._dom(name).openGraphicsFD(0, libvirt.VIR_DOMAIN_OPEN_GRAPHICS_SKIPAUTH)
+
     # ---------- states ----------
 
     def snapshot(self, name: str, snap: str, with_memory: bool) -> str:

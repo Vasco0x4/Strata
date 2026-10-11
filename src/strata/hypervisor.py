@@ -55,6 +55,8 @@ class Hypervisor(Protocol):
         """Press keys together, then release, e.g. ["ctrl", "alt", "delete"]."""
     def type_text(self, name: str, text: str) -> None: ...
     def click(self, name: str, x: int, y: int, button: str = "left", double: bool = False) -> None: ...
+    def open_console(self, name: str) -> int:
+        """File descriptor of a connected socket speaking VNC to the VM's display."""
 
     # States
     def snapshot(self, name: str, snap: str, with_memory: bool) -> str:
