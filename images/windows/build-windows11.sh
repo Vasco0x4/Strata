@@ -66,7 +66,7 @@ virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus 4
 	--disk "$work/virtio-win.iso",device=cdrom \
 	--disk "$work/answer.iso",device=cdrom \
 	--network network="$BUILD_NET",model=virtio \
-	--os-variant win11 --graphics vnc,listen=socket --noautoconsole \
+	--osinfo "name=win11,require=off" --graphics vnc,listen=socket --noautoconsole \
 	--channel unix,target_type=virtio,name=org.qemu.guest_agent.0
 
 log "waiting for the unattended install to finish and power off (up to 60 min)"

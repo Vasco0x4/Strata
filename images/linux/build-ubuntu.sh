@@ -22,7 +22,6 @@ gpgv --keyring "$KEYRING" "$work/SHA256SUMS.gpg" "$work/SHA256SUMS" 2>/dev/null 
 	|| die "signature check failed on SHA256SUMS (wrong keyring or tampered file)"
 log "SHA256SUMS signature OK (Ubuntu cloud image keyring)"
 
-img="noble"
 img_file=$(grep -oE '[a-z]+-server-cloudimg-amd64\.img' "$work/SHA256SUMS" | head -n1)
 [[ -n "$img_file" ]] || die "could not find a cloud image name for $RELEASE"
 fetch "$BASE/$img_file" "$work/$img_file"
@@ -61,7 +60,7 @@ trap 'cleanup_domain "$dom"' EXIT
 log "first boot (cloud-init runs, then powers off)"
 virt-install --connect qemu:///system --name "$dom" --memory 2048 --vcpus 2 \
 	--disk "$tmp",format=qcow2,bus=virtio --disk "$work/seed.iso",device=cdrom \
-	--network network="$BUILD_NET",model=virtio --os-variant ubuntu"$RELEASE" \
+	--network network="$BUILD_NET",model=virtio --osinfo "name=ubuntu$RELEASE,require=off" \
 	--graphics none --noautoconsole --import --channel unix,target_type=virtio,name=org.qemu.guest_agent.0
 
 wait_shutoff "$dom" 900
