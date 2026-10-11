@@ -1,0 +1,101 @@
+#!/usr/bin/python3 -I
+"""Root helper that applies Strata's dynamic firewall state.
+
+Started by systemd for each connection on /run/strata-netctl.sock (group "strata"
+only). Reads one JSON request on stdin, replies one JSON line on stdout:
+
+    {"forwards": [[host_port, vm_ip, vm_port], ...], "internet": [vm_ip, ...]}
+
+The request replaces the whole state atomically. Every value is validated against
+the ranges given on the command line; anything else is refused. Standard library only.
+"""
+
+import argparse
+import ipaddress
+import json
+import subprocess
+import sys
+
+ALLOWED_VM_PORTS = {22, 3389}
+MAX_ENTRIES = 4096
+MAX_REQUEST = 1024 * 1024
+TABLE = "inet strata"
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--subnet", required=True, type=ipaddress.IPv4Network)
+    p.add_argument("--ports", required=True, help="host port range, e.g. 30000-30999")
+    a = p.parse_args()
+    lo, hi = (int(x) for x in a.ports.split("-"))
+    if not 1024 <= lo <= hi <= 65535:
+        p.error("bad port range")
+    return a.subnet, lo, hi
+
+
+def vm_ip(value, subnet):
+    ip = ipaddress.IPv4Address(value)
+    if ip not in subnet or ip in (subnet.network_address, subnet.broadcast_address, subnet.network_address + 1):
+        raise ValueError(f"{ip} is not a VM address")
+    return ip
+
+
+def int_in(value, lo, hi, what):
+    if type(value) is not int or not lo <= value <= hi:
+        raise ValueError(f"bad {what}: {value!r}")
+    return value
+
+
+def build_script(req, subnet, lo, hi):
+    if not isinstance(req, dict) or set(req) != {"forwards", "internet"}:
+        raise ValueError("expected exactly the keys 'forwards' and 'internet'")
+    forwards, internet = req["forwards"], req["internet"]
+    if not isinstance(forwards, list) or not isinstance(internet, list):
+        raise ValueError("'forwards' and 'internet' must be lists")
+    if len(forwards) > MAX_ENTRIES or len(internet) > MAX_ENTRIES:
+        raise ValueError("too many entries")
+
+    seen_ports = set()
+    fwd = []
+    for entry in forwards:
+        if not isinstance(entry, list) or len(entry) != 3:
+            raise ValueError(f"bad forward: {entry!r}")
+        hport = int_in(entry[0], lo, hi, "host port")
+        ip = vm_ip(entry[1], subnet)
+        vport = entry[2]
+        if vport not in ALLOWED_VM_PORTS or type(vport) is not int:
+            raise ValueError(f"VM port {vport!r} not allowed")
+        if hport in seen_ports:
+            raise ValueError(f"host port {hport} used twice")
+        seen_ports.add(hport)
+        fwd.append(f"{hport} : {ip} . {vport}")
+    inet = sorted({str(vm_ip(v, subnet)) for v in internet})
+
+    lines = [f"flush map {TABLE} port_forwards", f"flush set {TABLE} internet_vms"]
+    if fwd:
+        lines.append(f"add element {TABLE} port_forwards {{ {', '.join(fwd)} }}")
+    if inet:
+        lines.append(f"add element {TABLE} internet_vms {{ {', '.join(inet)} }}")
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    subnet, lo, hi = parse_args()
+    try:
+        raw = sys.stdin.buffer.read(MAX_REQUEST + 1)
+        if len(raw) > MAX_REQUEST:
+            raise ValueError("request too large")
+        script = build_script(json.loads(raw), subnet, lo, hi)
+        res = subprocess.run(["/usr/sbin/nft", "-f", "-"], input=script.encode(),
+                             capture_output=True, timeout=10)
+        if res.returncode != 0:
+            raise RuntimeError(res.stderr.decode(errors="replace").strip())
+        reply = {"ok": True}
+    except Exception as e:  # reply with the reason, never a traceback
+        reply = {"ok": False, "error": str(e)[:500]}
+    sys.stdout.write(json.dumps(reply) + "\n")
+    sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()

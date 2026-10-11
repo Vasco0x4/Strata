@@ -6,22 +6,28 @@
 #   2. installs QEMU/KVM, libvirt, OVMF, swtpm, libguestfs
 #   3. creates the isolated VM network and stops libvirt's "default" network
 #   4. grows the root LVM volume into free space (EXTEND_LVM=no to skip)
-#   5. creates the "strata" service account and storage pools
-#   6. gives libvirt access to the user building Strata (removed at lockdown)
-#   7. checks everything
+#   5. creates the "strata" service account, its config and storage pools
+#   6. installs the root helper that updates the firewall (the service never runs as root)
+#   7. installs the Strata service unit (sandboxed, starts once the code is deployed)
+#   8. gives the user building Strata temporary access (removed by setup/lockdown.sh)
+#   9. checks everything
 #
-# Settings (environment variables): LAN_IF, BRIDGE, SUBNET_PREFIX, DEV_USER, EXTEND_LVM
+# Settings (environment variables):
+#   LAN_IF, BRIDGE, SUBNET_PREFIX, FORWARD_PORTS, DEV_USER, EXTEND_LVM
 set -euo pipefail
 
 LAN_IF="${LAN_IF:-$(ip -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')}"
 BRIDGE="${BRIDGE:-strata0}"
 SUBNET_PREFIX="${SUBNET_PREFIX:-10.99.0}"
+FORWARD_PORTS="${FORWARD_PORTS:-30000-30999}"
 DEV_USER="${DEV_USER:-${SUDO_USER:-}}"
 EXTEND_LVM="${EXTEND_LVM:-yes}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(dirname "$HERE")"
 CONF_DIR=/etc/strata
 DATA_DIR=/srv/strata
+APP_DIR=/opt/strata
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -29,6 +35,8 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run it with sudo"
 [[ -n "$LAN_IF" ]] && ip link show "$LAN_IF" >/dev/null 2>&1 || die "LAN interface not found (LAN_IF=$LAN_IF)"
 [[ -e /dev/kvm ]] || die "/dev/kvm missing: no (nested) virtualization available"
+[[ "$FORWARD_PORTS" =~ ^[0-9]+-[0-9]+$ ]] || die "FORWARD_PORTS must look like 30000-30999"
+LAN_IP=$(ip -4 -o addr show dev "$LAN_IF" | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
 render() {  # render <template> <destination>
 	sed -e "s|@LAN_IF@|$LAN_IF|g" -e "s|@BRIDGE@|$BRIDGE|g" \
@@ -37,7 +45,7 @@ render() {  # render <template> <destination>
 	    "$1" > "$2"
 }
 
-step "1/7 Firewall"
+step "1/9 Firewall"
 install -d -m 0755 "$CONF_DIR"
 render "$HERE/firewall.nft.in" "$CONF_DIR/firewall.nft"
 nft -c -f "$CONF_DIR/firewall.nft"
@@ -74,7 +82,7 @@ else
 	systemctl start strata-firewall.service
 fi
 
-step "2/7 Packages"
+step "2/9 Packages"
 apt-get update -q
 DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
 	qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst \
@@ -82,7 +90,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
 	python3-venv websockify novnc xorriso cloud-image-utils
 systemctl daemon-reload
 
-step "3/7 Isolated VM network"
+step "3/9 Isolated VM network"
 echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/60-strata.conf
 sysctl -q -p /etc/sysctl.d/60-strata.conf
 if virsh -q net-info default >/dev/null 2>&1; then
@@ -94,7 +102,7 @@ virsh -q net-info strata >/dev/null 2>&1 || virsh -q net-define "$CONF_DIR/netwo
 virsh -q net-autostart strata
 virsh -q net-info strata | grep -q '^Active:.*yes' || virsh -q net-start strata
 
-step "4/7 Disk"
+step "4/9 Disk"
 if [[ "$EXTEND_LVM" == yes ]]; then
 	root_lv=$(findmnt -no SOURCE /)
 	vg=$(lvs --noheadings -o vg_name "$root_lv" 2>/dev/null | tr -d ' ' || true)
@@ -111,10 +119,27 @@ if [[ "$EXTEND_LVM" == yes ]]; then
 fi
 df -h /
 
-step "5/7 Service account and storage"
+step "5/9 Service account, config and storage"
 id strata >/dev/null 2>&1 || useradd --system --user-group --home-dir /var/lib/strata \
-	--create-home --shell /usr/sbin/nologin strata
-usermod -aG libvirt,kvm strata
+	--no-create-home --shell /usr/sbin/nologin strata
+getent group strata-admin >/dev/null || groupadd --system strata-admin
+usermod -aG libvirt,kvm,strata-admin strata
+if [[ ! -e "$CONF_DIR/strata.toml" ]]; then
+	cat > "$CONF_DIR/strata.toml" <<EOF
+# Strata settings. Restart the service after a change: systemctl restart stratad
+public_host = "$LAN_IP"
+port = 8080
+subnet_prefix = "$SUBNET_PREFIX"
+forward_ports = [${FORWARD_PORTS%-*}, ${FORWARD_PORTS#*-}]
+
+[quota]   # default limits for a new agent
+max_vms = 3
+max_ram_mb = 16384
+max_vcpus = 8
+EOF
+fi
+chown root:strata "$CONF_DIR/strata.toml"
+chmod 0640 "$CONF_DIR/strata.toml"
 install -d -m 0711 "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/vms"
 for pool in images vms; do
 	name="strata-$pool"
@@ -123,13 +148,115 @@ for pool in images vms; do
 	virsh -q pool-info "$name" | grep -q '^State:.*running' || virsh -q pool-start "$name"
 done
 
-step "6/7 Build-time access"
+step "6/9 Firewall helper"
+install -d -m 0755 /usr/local/lib/strata
+install -m 0755 -o root -g root "$REPO/helpers/strata-netctl" /usr/local/lib/strata/strata-netctl
+cat > /etc/systemd/system/strata-netctl.socket <<'EOF'
+[Unit]
+Description=Strata firewall control socket
+
+[Socket]
+ListenStream=/run/strata-netctl.sock
+SocketUser=root
+SocketGroup=strata
+SocketMode=0660
+Accept=yes
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target
+EOF
+cat > /etc/systemd/system/strata-netctl@.service <<EOF
+[Unit]
+Description=Strata firewall control
+Requires=strata-firewall.service
+After=strata-firewall.service
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/lib/strata/strata-netctl --subnet $SUBNET_PREFIX.0/24 --ports $FORWARD_PORTS
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=30
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+EOF
+systemctl daemon-reload
+systemctl enable -q --now strata-netctl.socket
+
+step "7/9 Strata service"
+install -d -m 0755 "$APP_DIR"
+cat > /etc/systemd/system/stratad.service <<'EOF'
+[Unit]
+Description=Strata
+After=network-online.target libvirtd.service strata-netctl.socket
+Wants=network-online.target
+Requires=strata-netctl.socket
+ConditionPathExists=/opt/strata/.venv/bin/stratad
+
+[Service]
+User=strata
+Group=strata
+ExecStart=/opt/strata/.venv/bin/stratad
+Restart=on-failure
+RestartSec=5
+StateDirectory=strata
+StateDirectoryMode=0700
+RuntimeDirectory=strata
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable -q stratad.service
+
+step "8/9 Build-time access"
 if [[ -n "$DEV_USER" && "$DEV_USER" != root ]]; then
-	usermod -aG libvirt "$DEV_USER"
-	echo "$DEV_USER added to the libvirt group (removed at lockdown)."
+	usermod -aG libvirt,strata-admin "$DEV_USER"
+	chown "$DEV_USER:$DEV_USER" "$APP_DIR"
+	cat > /etc/polkit-1/rules.d/50-strata-build.rules <<EOF
+// Build-time only: lets $DEV_USER restart the Strata service. Removed by setup/lockdown.sh.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "stratad.service" &&
+        subject.user == "$DEV_USER") {
+        return polkit.Result.YES;
+    }
+});
+EOF
+	echo "$DEV_USER: libvirt and strata-admin groups, owns $APP_DIR, may restart stratad (until lockdown)."
 fi
 
-step "7/7 Checks"
+step "9/9 Checks"
 fails=0
 check() {
 	local label=$1; shift
@@ -142,6 +269,7 @@ check "Strata firewall loaded" nft list table inet strata
 check "$daemon requires the firewall" bash -c "systemctl show -p Requires $daemon.service | grep -q strata-firewall"
 check "network 'strata' active" bash -c "virsh -q net-info strata | grep -q '^Active:.*yes'"
 check "network 'default' stopped" bash -c "! virsh -q net-info default 2>/dev/null | grep -q '^Active:.*yes'"
+check "firewall helper listening" systemctl is-active -q strata-netctl.socket
 check "AppArmor enabled" aa-enabled -q
 check "libvirt confines QEMU with AppArmor" bash -c "virsh -q capabilities | grep -q '<model>apparmor</model>'"
 check "QEMU seccomp not disabled" bash -c "! grep -Eq '^\s*seccomp_sandbox\s*=\s*0' /etc/libvirt/qemu.conf"

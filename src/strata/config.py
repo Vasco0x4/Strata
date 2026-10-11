@@ -38,7 +38,8 @@ class Config:
     network: str = "strata"
     subnet_prefix: str = "10.99.0"
     forward_ports: tuple[int, int] = (30000, 30999)
-    netctl_socket: Path = Path("/run/strata/netctl.sock")
+    netctl_socket: Path = Path("/run/strata-netctl.sock")
+    admin_socket: Path = Path("/run/strata/admin.sock")
     disposable_ttl_hours: int = 24
     default_quota: Quota = field(default_factory=Quota)
 
