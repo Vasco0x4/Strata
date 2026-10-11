@@ -77,15 +77,16 @@ def test_resources_match_spec(hv_mod):
 def test_windows_gets_tpm_and_secure_boot(hv_mod):
     _, dom = build(hv_mod, "windows")
     assert dom.find("devices/tpm") is not None, "Windows 11 needs a TPM"
-    assert dom.find("os/loader").get("secure") == "yes", "Windows 11 needs Secure Boot"
-    assert dom.find("features/smm").get("state") == "on", "Secure Boot needs SMM"
+    assert dom.find("os").get("firmware") == "efi"
+    features = {f.get("name") for f in dom.findall("os/firmware/feature") if f.get("enabled") == "yes"}
+    assert {"secure-boot", "enrolled-keys"} <= features, "Windows 11 needs Secure Boot with enrolled keys"
+    assert dom.find("features/smm").get("state") == "on", "Secure Boot needs SMM to protect the var store"
 
 
 def test_linux_has_no_tpm_or_secureboot(hv_mod):
     _, dom = build(hv_mod)
     assert dom.find("devices/tpm") is None
-    loader = dom.find("os/loader")
-    assert loader is None or loader.get("secure") != "yes"
+    assert dom.find("os/firmware") is None, "Linux VMs should not request Secure Boot firmware"
 
 
 def test_parse_virt_diff(hv_mod):

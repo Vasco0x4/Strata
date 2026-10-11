@@ -70,12 +70,15 @@ def _domain_xml(cfg: Config, spec: VMSpec, disk: str) -> str:
       <vpindex state='on'/><runtime state='on'/><synic state='on'/><stimer state='on'/>
       <frequencies state='on'/><tlbflush state='on'/><ipi state='on'/>
     </hyperv>""" if windows else ""
+    # Firmware auto-selection constrained to a Secure Boot build with Microsoft keys already
+    # enrolled (Windows 11 requires this). SMM (in <features> below) protects the var store.
+    # Per libvirt docs this feature block is the mechanism; a separate <loader secure='yes'/>
+    # is redundant with it, so it is intentionally not included.
     secure_boot = """
     <firmware>
       <feature enabled='yes' name='secure-boot'/>
       <feature enabled='yes' name='enrolled-keys'/>
-    </firmware>
-    <loader secure='yes'/>""" if windows else ""
+    </firmware>""" if windows else ""
     tpm = """
     <tpm model='tpm-crb'><backend type='emulator' version='2.0'/></tpm>""" if windows else ""
     return f"""<domain type='kvm'>
