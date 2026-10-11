@@ -38,6 +38,11 @@ qemu-img resize "$tmp" "${DISK_GB}G" >/dev/null
 
 # cloud-init: a "strata" user (password set per-VM via the guest agent), guest agent,
 # SSH with password auth, then power off so the disk becomes a clean backing image.
+#
+# write_files replaces cloud-init's MAC-pinned netplan with a MAC-agnostic one and turns
+# off cloud-init's network regeneration. Without this, the clean image's netplan matches
+# the build VM's MAC, so every clone boots with its NIC unmanaged (down, no DHCP). Matching
+# by interface name instead means any cloned VM gets DHCP on its virtio NIC automatically.
 cat > "$work/user-data" <<'CLOUD'
 #cloud-config
 users:
@@ -49,6 +54,19 @@ users:
 ssh_pwauth: true
 package_update: true
 packages: [qemu-guest-agent, openssh-server]
+write_files:
+  - path: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    content: "network: {config: disabled}\n"
+  - path: /etc/netplan/50-cloud-init.yaml
+    permissions: '0600'
+    content: |
+      network:
+        version: 2
+        ethernets:
+          enall:
+            match: {name: "e*"}
+            dhcp4: true
+            dhcp-identifier: mac
 runcmd:
   - systemctl enable --now qemu-guest-agent
   - systemctl enable --now ssh

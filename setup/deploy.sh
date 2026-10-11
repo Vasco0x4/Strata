@@ -11,12 +11,15 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 [[ -w "$APP_DIR" ]] || { echo "$APP_DIR is not writable by $USER; run setup/install-host.sh first"; exit 1; }
 
 echo "==> building the virtualenv in $APP_DIR/.venv"
+# Idempotent: create the venv only if missing, then always (re)install the code.
 if command -v uv >/dev/null; then
-	uv venv --system-site-packages --python "$(command -v python3)" "$APP_DIR/.venv"
-	VIRTUAL_ENV="$APP_DIR/.venv" uv pip install "$REPO"
+	[[ -x "$APP_DIR/.venv/bin/python" ]] || \
+		uv venv --system-site-packages --python "$(command -v python3)" "$APP_DIR/.venv"
+	VIRTUAL_ENV="$APP_DIR/.venv" uv pip install --reinstall-package strata "$REPO"
 else
-	python3 -m venv --system-site-packages "$APP_DIR/.venv"
+	[[ -x "$APP_DIR/.venv/bin/python" ]] || python3 -m venv --system-site-packages "$APP_DIR/.venv"
 	"$APP_DIR/.venv/bin/python" -m pip install --quiet --upgrade pip
+	"$APP_DIR/.venv/bin/pip" install --force-reinstall --no-deps "$REPO"
 	"$APP_DIR/.venv/bin/pip" install "$REPO"
 fi
 

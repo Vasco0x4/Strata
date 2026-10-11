@@ -168,7 +168,7 @@ class LibvirtHypervisor:
         vol = pool.createXML(f"""<volume>
   <name>{name}.{n}.qcow2</name>
   <capacity unit='bytes'>{capacity}</capacity>
-  <target><format type='qcow2'/><permissions><mode>0600</mode></permissions></target>
+  <target><format type='qcow2'/><permissions><mode>0644</mode></permissions></target>
   <backingStore><path>{backing}</path><format type='qcow2'/></backingStore>
 </volume>""", 0)
         return vol.path()
@@ -389,12 +389,12 @@ class LibvirtHypervisor:
             self._set_disk(dom, self._new_overlay(name, frozen))
             return frozen
 
+        # Pre-create the new active overlay ourselves (mode 0644) and have libvirt reuse it,
+        # instead of letting snapshotCreateXML create it at 0600 owned by libvirt-qemu. This
+        # way, once this overlay is frozen by a later snapshot, libvirt restores our 0644 and
+        # the unprivileged strata service can still read it for an offline diff.
+        new_disk = self._new_overlay(name, frozen)
         pool = self._pool()
-        pool.refresh(0)
-        nxt = 1 + max((int(v.split(".")[-2]) for v in pool.listVolumes()
-                       if v.startswith(name + ".") and v.endswith(".qcow2") and v.split(".")[-2].isdigit()),
-                      default=-1)
-        new_disk = f"{self._pool_dir()}/{name}.{nxt}.qcow2"
         memory = (f"<memory snapshot='external' file={quoteattr(f'{self._pool_dir()}/{name}.{snap}.mem')}/>"
                   if with_memory else "<memory snapshot='no'/>")
         xml = f"""<domainsnapshot>
@@ -402,7 +402,8 @@ class LibvirtHypervisor:
   {memory}
   <disks><disk name='vda' snapshot='external'><driver type='qcow2'/><source file={quoteattr(new_disk)}/></disk></disks>
 </domainsnapshot>"""
-        flags = libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA | libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_ATOMIC
+        flags = (libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_NO_METADATA | libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_ATOMIC
+                 | libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_REUSE_EXT)
         if with_memory:
             dom.snapshotCreateXML(xml, flags | libvirt.VIR_DOMAIN_SNAPSHOT_CREATE_LIVE)
         else:
