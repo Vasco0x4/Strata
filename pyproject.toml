@@ -1,0 +1,30 @@
+[project]
+name = "strata"
+version = "0.1.0"
+description = "Disposable and long-lived virtual machines for humans and AI agents, on KVM/libvirt"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp>=2.3.0",
+    "pillow>=12.3.0",
+    "starlette>=1.7.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+strata = "strata.cli:main"
+stratad = "strata.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
