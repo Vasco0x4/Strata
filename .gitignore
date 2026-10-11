@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+
+# VM artifacts never belong in the repo
+*.qcow2
+*.img
+*.iso
+*.raw

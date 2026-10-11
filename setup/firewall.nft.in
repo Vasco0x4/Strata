@@ -1,0 +1,56 @@
+#!/usr/sbin/nft -f
+# Strata host firewall.
+# Rule: nothing leaves a VM, except DHCP to the host and, for VMs explicitly
+# allowed, the internet (never a private network).
+# The internet_vms set and the port_forwards map are filled by the Strata service.
+
+table inet strata
+delete table inet strata
+
+table inet strata {
+	# VMs allowed to reach the internet
+	set internet_vms {
+		type ipv4_addr
+	}
+
+	# Inbound access opened by the service: host port -> VM IP . VM port
+	map port_forwards {
+		type inet_service : ipv4_addr . inet_service
+	}
+
+	set private_nets {
+		type ipv4_addr
+		flags interval
+		elements = { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+			     169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16,
+			     198.18.0.0/15, 224.0.0.0/3 }
+	}
+
+	# To the host itself: DHCP only
+	chain input {
+		type filter hook input priority filter - 10; policy accept;
+		iifname "@BRIDGE@" udp sport 68 udp dport 67 accept
+		iifname "@BRIDGE@" drop
+	}
+
+	# Through the host
+	chain forward {
+		type filter hook forward priority filter - 10; policy accept;
+		iifname "@BRIDGE@" ct state established,related accept
+		oifname "@BRIDGE@" ct state established,related accept
+		oifname "@BRIDGE@" ct status dnat accept
+		iifname "@BRIDGE@" oifname "@LAN_IF@" ip saddr @internet_vms ip daddr != @private_nets accept
+		iifname "@BRIDGE@" drop
+		oifname "@BRIDGE@" drop
+	}
+
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "@LAN_IF@" dnat ip to tcp dport map @port_forwards
+	}
+
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		ip saddr @SUBNET@ oifname "@LAN_IF@" masquerade
+	}
+}

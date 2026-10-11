@@ -1,0 +1,17 @@
+<!-- VM network: routing is decided only by the Strata firewall,
+     VMs cannot talk to each other, no DNS served by the host. -->
+<network xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'>
+  <name>strata</name>
+  <forward mode='open'/>
+  <bridge name='@BRIDGE@' stp='off' delay='0'/>
+  <port isolated='yes'/>
+  <dns enable='no'/>
+  <ip address='@GATEWAY@' prefix='24'>
+    <dhcp>
+      <range start='@DHCP_START@' end='@DHCP_END@'/>
+    </dhcp>
+  </ip>
+  <dnsmasq:options>
+    <dnsmasq:option value='dhcp-option=option:dns-server,9.9.9.9,1.1.1.1'/>
+  </dnsmasq:options>
+</network>
