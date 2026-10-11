@@ -23,7 +23,15 @@ instant copies, snapshots, forks from any state, offline diff between states.
 - Commit in English, push to github.com/Vasco0x4/Strata. Test, commit and push per step.
 
 ## State / next
-The host installer has not been run yet (no libvirt on this box). Everything is written
-and passes against the fake hypervisor. The live bring-up — register images, create a
-real Win11/Ubuntu VM, run the isolation tests, exercise the libvirt layer and the noVNC
-console — is pending the user running `setup/install-host.sh`. See `docs/PLAN.md`.
+Host installer NOT run yet (no libvirt on this box). All code written; 62 tests pass
+against the fake hypervisor (incl. e2e MCP/HTTP/CLI), ruff + CI green, systemd units and
+the package build verified offline. A review-driven de-risking pass fixed three real
+first-run bugs: the Secure Boot firmware XML (would fail every Windows create), the noVNC
+console socket family (AF_INET vs AF_UNIX), and `--os-variant` aborting on an unknown name.
+
+The live bring-up is hard-blocked on the user running `sudo bash setup/install-host.sh`
+(then `deploy.sh`, then an image build). After that, run `setup/smoke-test.sh` — it
+encodes the acceptance + isolation criteria (create/exec/files/snapshot/revert/fork/diff,
+and proves a VM cannot reach host/LAN/hypervisor/internet). Then `setup/lockdown.sh`.
+The libvirt layer, image builders and noVNC console have still never run on a real host.
+See `docs/PLAN.md`.
