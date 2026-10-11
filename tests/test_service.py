@@ -182,3 +182,33 @@ def test_diff(env):
     assert out["changes"][0]["path"] == "/tmp/new"
     with pytest.raises(NotFound):
         svc.diff(alice, "a1", "before", "missing")
+
+
+def test_generated_passwords_meet_windows_complexity():
+    from strata.service import gen_password
+    seen = set()
+    for _ in range(200):
+        pw = gen_password()
+        assert len(pw) == 16
+        assert any(c.islower() for c in pw) and any(c.isupper() for c in pw) and any(c.isdigit() for c in pw)
+        seen.add(pw)
+    assert len(seen) > 190  # effectively always unique
+
+
+def test_addresses_and_ports_are_unique_across_vms(env):
+    svc, hv, net, caller = env
+    admin = caller("root", admin=True)
+    ips, ports, macs = set(), set(), set()
+    for i in range(8):
+        vm = svc.create_vm(admin, image="win11", name=f"w{i}")
+        ip = hv.vms[vm["name"]]["spec"].ip
+        assert ip not in ips and ip.startswith("10.99.0.")
+        ips.add(ip)
+        # ssh and rdp ports distinct and within the configured range
+        for pair in net.forwards:
+            assert 30000 <= pair[0] <= 30999
+            assert pair[0] not in ports
+            ports.add(pair[0])
+        ports.clear()
+        macs.add(hv.vms[vm["name"]]["spec"].mac)
+    assert len(ips) == 8 and len(macs) == 8
