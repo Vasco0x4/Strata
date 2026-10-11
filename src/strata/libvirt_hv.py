@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import base64
 import io
-import subprocess
 import json
 import logging
+import subprocess
 import threading
 import time
 import xml.etree.ElementTree as ET

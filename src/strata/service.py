@@ -16,7 +16,8 @@ import string
 import threading
 import time
 from collections import defaultdict
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .auth import Caller
 from .config import Config
@@ -407,7 +408,7 @@ class Service:
 
     @journaled("snapshot")
     def snapshot(self, caller: Caller, vm: str, name: str, with_memory: bool = True) -> dict:
-        row = self._own(caller, vm)
+        self._own(caller, vm)
         _check_name("snapshot", name)
         if self.db.one("SELECT 1 FROM snapshots WHERE vm = ? AND name = ?", (vm, name)):
             raise Conflict(f"{vm!r} already has a snapshot named {name!r}", "pick another name")

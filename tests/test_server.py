@@ -8,6 +8,7 @@ import time
 import httpx
 import pytest
 import uvicorn
+from conftest import FakeHypervisor, FakeNet
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
@@ -17,8 +18,6 @@ from strata.config import Config, Quota
 from strata.db import Database
 from strata.server import build_app
 from strata.service import Service
-
-from conftest import FakeHypervisor, FakeNet
 
 
 def free_port():
