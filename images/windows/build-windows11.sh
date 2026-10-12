@@ -47,7 +47,10 @@ cp "$HERE/autounattend.xml" "$HERE/provision.ps1" "$answer/"
 # A small ISO Setup will scan for autounattend.xml, plus the virtio drivers it references.
 xorriso -as mkisofs -quiet -J -r -V STRATA -o "$work/answer.iso" "$answer"
 
-disk="$IMAGES_DIR/$VOLUME"
+# Build into a temporary file and only swap it into place (and register) after the image is
+# verified, so an existing, working win11 image is never replaced by an in-progress build.
+final_disk="$IMAGES_DIR/$VOLUME"
+disk="$IMAGES_DIR/.building-$VOLUME"
 rm -f "$disk"
 qemu-img create -f qcow2 "$disk" "${DISK_GB}G" >/dev/null
 
@@ -142,6 +145,8 @@ if [[ "${WIN_COMPRESS:-0}" == 1 ]]; then
 else
 	log "finalizing image (no recompression; set WIN_COMPRESS=1 to shrink when space allows)"
 fi
+# Swap the verified build into place only now.
+mv -f "$disk" "$final_disk"
 $VIRSH pool-refresh strata-images >/dev/null 2>&1 || true
 register "$NAME" windows "$VOLUME" strata "Windows 11 Enterprise (evaluation)"
 log "done: $NAME  (temporary setup password was StrataSetup!1; Strata resets it per VM)"
