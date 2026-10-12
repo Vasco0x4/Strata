@@ -59,22 +59,34 @@
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <ComputerName>strata</ComputerName>
     </component>
-    <!-- Block automatic BitLocker device encryption before it can start, and stage the
-         provisioning script as SetupComplete.cmd. RunSynchronous belongs to
+    <!-- Block automatic BitLocker, disable VBS/HVCI (it runs a nested hypervisor inside the
+         guest — a big drag on an already nested VM, and it slows runtime VMs most), and stage
+         the provisioning script as SetupComplete.cmd. RunSynchronous belongs to
          Microsoft-Windows-Deployment, NOT Shell-Setup (putting it under Shell-Setup makes the
-         whole answer file invalid, which aborts Setup with "restarted unexpectedly"). -->
+         whole answer file invalid, which aborts Setup with "restarted unexpectedly"). VBS is a
+         GUEST security feature; disabling it does not weaken Strata's host isolation. -->
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <RunSynchronous>
         <RunSynchronousCommand wcm:action="add"><Order>1</Order>
           <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>
         </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>2</Order>
+          <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>3</Order>
+          <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity /v Enabled /t REG_DWORD /d 0 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add"><Order>4</Order>
+          <Path>bcdedit /set hypervisorlaunchtype off</Path>
+        </RunSynchronousCommand>
         <!-- Find provision.ps1 on the answer media (CD letter varies) and install it as
              C:\Windows\Setup\Scripts\SetupComplete.cmd, which Windows runs once as SYSTEM
              (elevated) when Setup finishes, before the first logon. This is the reliable path:
-             it needs no logon and is never UAC-filtered, unlike FirstLogonCommands. -->
-        <RunSynchronousCommand wcm:action="add"><Order>2</Order>
-          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$d=(Get-PSDrive -PSProvider FileSystem|?{Test-Path (Join-Path $_.Root 'provision.ps1')}|Select -First 1).Root; if($d){New-Item -ItemType Directory -Force 'C:\Windows\Setup\Scripts'|Out-Null; Copy-Item (Join-Path $d 'provision.ps1') 'C:\Windows\Setup\Scripts\provision.ps1' -Force; Set-Content 'C:\Windows\Setup\Scripts\SetupComplete.cmd' 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\provision.ps1 &gt; C:\Windows\Setup\Scripts\provision.log 2&gt;&amp;1' -Encoding Ascii}"</Path>
+             it needs no logon and is never UAC-filtered, unlike FirstLogonCommands. Wrapped in
+             try/catch with an explicit exit 0 so it can never fail the pass and abort Setup. -->
+        <RunSynchronousCommand wcm:action="add"><Order>5</Order>
+          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try{$ErrorActionPreference='SilentlyContinue';$d=(Get-PSDrive -PSProvider FileSystem|?{Test-Path (Join-Path $_.Root 'provision.ps1')}|Select -First 1).Root;if($d){New-Item -ItemType Directory -Force 'C:\Windows\Setup\Scripts'|Out-Null;Copy-Item (Join-Path $d 'provision.ps1') 'C:\Windows\Setup\Scripts\provision.ps1' -Force;Set-Content 'C:\Windows\Setup\Scripts\SetupComplete.cmd' 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\provision.ps1 &gt; C:\Windows\Setup\Scripts\provision.log 2&gt;&amp;1' -Encoding Ascii}}catch{};exit 0"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>

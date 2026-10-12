@@ -58,6 +58,13 @@ try {
   }
 } catch {}
 
+# Disable VBS/HVCI (a GUEST security feature — does not affect host isolation). It runs a nested
+# hypervisor inside the guest, which is very slow on an already nested VM; off makes runtime VMs
+# much snappier. Also set in the answer file so it applies from first boot.
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f | Out-Null
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f | Out-Null
+bcdedit /set hypervisorlaunchtype off | Out-Null
+
 # Never sleep; show the console at the login screen
 powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0

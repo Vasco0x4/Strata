@@ -65,15 +65,16 @@ log "installing Windows (unattended; this takes a while)"
 # On every later reboot during the install the disk has a bootloader and boots the installed
 # Windows directly — so Setup is never re-entered from the CD (which aborts with "the computer
 # restarted unexpectedly").
-# Build-time performance: this is a throwaway build VM, so use cache=unsafe (skips the guest's
-# fsyncs — a big speedup for Windows setup's many small writes; fine because a crash just means
-# rebuild) and more vCPUs. Nested virtualization is inherently slow, especially with Windows 11's
-# VBS; these cut the wall time noticeably. Tune with BUILD_VCPUS.
+# Build-time performance: more vCPUs, and cache=writeback (honours the guest's flushes via the
+# host page cache — fast, and unlike cache=unsafe it does NOT corrupt the image if the VM is
+# reset mid-install, which cost a full rebuild once). The answer file disables the guest's VBS
+# (a nested hypervisor) so Setup and later boots are much faster on this already nested host.
+# Tune with BUILD_VCPUS.
 BUILD_VCPUS="${BUILD_VCPUS:-8}"
 virt-install --connect qemu:///system --name "$dom" --memory "$RAM_MB" --vcpus "$BUILD_VCPUS" \
 	--cpu host-passthrough --machine q35 \
 	--boot uefi,loader.secure=yes --features smm.state=on --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
-	--disk "$disk",format=qcow2,bus=virtio,boot.order=1,cache=unsafe,discard=unmap \
+	--disk "$disk",format=qcow2,bus=virtio,boot.order=1,cache=writeback,discard=unmap \
 	--disk "$win_iso",device=cdrom,boot.order=2 \
 	--disk "$work/virtio-win.iso",device=cdrom \
 	--disk "$work/answer.iso",device=cdrom \
@@ -106,8 +107,8 @@ abort_flag="$work/.storage-abort"; rm -f "$abort_flag"
 # From here, leave the VM in place on failure so it can be inspected (screenshot, console)
 # instead of being destroyed by the EXIT trap.
 trap - EXIT
-log "waiting for the unattended install to finish and power off (up to 90 min)"
-if ! wait_shutoff "$dom" 5400; then
+log "waiting for the unattended install to finish and power off (up to 150 min)"
+if ! wait_shutoff "$dom" 9000; then
 	[[ -f "$abort_flag" ]] && die "storage watchdog stopped the build: the disk exceeded ${MAX_BUILD_GB} GB.
   Free space (or raise MAX_BUILD_GB) and rerun."
 	die "$dom did not power off in time. It was left running for inspection:
@@ -123,9 +124,9 @@ fi
 log "verifying the built image (booting to check the guest agent)"
 $VIRSH start "$dom" >/dev/null 2>&1 || true
 verified=""
-for _ in $(seq 1 80); do
+for _ in $(seq 1 150); do
 	if $VIRSH qemu-agent-command "$dom" '{"execute":"guest-ping"}' >/dev/null 2>&1; then verified=1; break; fi
-	sleep 3
+	sleep 4
 done
 $VIRSH shutdown "$dom" --mode agent >/dev/null 2>&1 || true
 sleep 5
