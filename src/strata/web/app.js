@@ -21,6 +21,10 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+function spinner(label) {
+  return el("span", { class: "spin-wrap" }, el("span", { class: "spinner" }), label ? el("span", {}, label) : null);
+}
+
 function toast(msg, error = false) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -44,10 +48,12 @@ async function api(method, path, body) {
 }
 
 async function act(button, fn, okMsg) {
+  const label = button.textContent;
   button.disabled = true;
+  button.classList.add("busy");
   try { const res = await fn(); if (okMsg) toast(okMsg); return res; }
   catch (e) { toast(e.message, true); }
-  finally { button.disabled = false; }
+  finally { button.disabled = false; button.classList.remove("busy"); button.textContent = label; }
 }
 
 function copyButton(text) {
@@ -69,6 +75,8 @@ function clearPage() {
   app.replaceChildren();
 }
 
+const osIcon = (os) => os === "windows" ? "⊞" : "🐧";
+
 // ---------- login and routing ----------
 
 function showLogin() {
@@ -79,8 +87,8 @@ function showLogin() {
   app.append(el("form", { class: "panel login", onsubmit: async (ev) => {
     ev.preventDefault();
     await act(go, async () => { await api("POST", "/api/login", { token: token.value.trim() }); await start(); });
-  } }, el("h1", {}, "Strata"),
-     el("p", { class: "muted" }, "Paste your token. The admin token is in /var/lib/strata/admin-token on the host."),
+  } }, el("div", { class: "login-brand" }, el("span", { class: "brand-mark big" }), el("h1", {}, "Strata")),
+     el("p", { class: "muted" }, "Disposable and long-lived VMs for humans and agents. Paste your token — the admin token is in /var/lib/strata/admin-token on the host."),
      el("div", { class: "row" }, el("label", { style: "flex:1" }, "Token", token), go)));
   token.focus();
 }
@@ -95,6 +103,8 @@ function route() {
   const path = location.pathname;
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === path));
   if (path.startsWith("/vm/")) return vmPage(decodeURIComponent(path.slice(4)));
+  if (path === "/images") return imagesPage();
+  if (path === "/guide") return guidePage();
   if (path === "/agents" && me.is_admin) return agentsPage();
   return vmsPage();
 }
@@ -113,54 +123,197 @@ async function start() {
   try { me = await api("GET", "/api/me"); } catch { return; }
   document.getElementById("nav").hidden = false;
   document.getElementById("nav-agents").hidden = !me.is_admin;
-  document.getElementById("whoami").textContent = me.name + (me.is_admin ? " (admin)" : "");
+  document.getElementById("whoami").textContent = me.name + (me.is_admin ? " · admin" : "");
   route();
 }
 
-// ---------- VM list ----------
+// ---------- VM list + dashboard ----------
+
+function statCard(n, label, cls = "") {
+  return el("div", { class: "stat " + cls }, el("div", { class: "n" }, String(n)), el("div", { class: "l" }, label));
+}
 
 async function vmsPage() {
+  const stats = el("div", { class: "stats" });
   const list = el("tbody");
   const images = el("select");
   const name = el("input", { placeholder: "auto" });
-  const vcpus = el("input", { type: "number", min: 1, max: 16, placeholder: "auto", style: "width:80px" });
-  const ram = el("input", { type: "number", min: 1024, step: 1024, placeholder: "auto", style: "width:100px" });
+  const vcpus = el("input", { type: "number", min: 1, max: 16, placeholder: "auto", style: "width:84px" });
+  const ram = el("input", { type: "number", min: 1024, step: 1024, placeholder: "auto", style: "width:104px" });
   const internet = el("input", { type: "checkbox" });
   const permanent = el("input", { type: "checkbox" });
-  const create = el("button", { type: "submit" }, "Create");
+  const create = el("button", { type: "submit" }, "Create VM");
+  const status = el("div", { class: "create-status", hidden: true });
+  const fields = [images, name, vcpus, ram, internet, permanent];
 
   app.append(
     el("h1", {}, "Virtual machines"),
+    stats,
     el("form", { class: "panel", onsubmit: async (ev) => {
       ev.preventDefault();
-      toast("Creating… Windows takes a few minutes.");
-      const vm = await act(create, () => api("POST", "/api/vms", {
-        image: images.value, name: name.value || null, vcpus: +vcpus.value || null, ram_mb: +ram.value || null,
-        internet: internet.checked, permanent: permanent.checked }));
-      if (vm) navigate(`/vm/${encodeURIComponent(vm.name)}`);
+      if (!images.value) { toast("No image available — build one first (Images page).", true); return; }
+      const target = name.value || images.value;
+      fields.forEach(f => f.disabled = true);
+      create.disabled = true;
+      status.hidden = false;
+      status.className = "create-status";
+      status.replaceChildren(spinner(),
+        el("span", {}, `Creating ${target}… this takes about a minute (Windows: a few). It shows up below as it boots, and opens here when ready.`));
+      try {
+        const vm = await api("POST", "/api/vms", {
+          image: images.value, name: name.value || null, vcpus: +vcpus.value || null, ram_mb: +ram.value || null,
+          internet: internet.checked, permanent: permanent.checked });
+        navigate(`/vm/${encodeURIComponent(vm.name)}`);
+      } catch (e) {
+        status.className = "create-status bad";
+        status.replaceChildren(el("span", {}, "Could not create: " + e.message));
+        fields.forEach(f => f.disabled = false);
+        create.disabled = false;
+      }
     } }, el("h2", {}, "New VM"),
       el("div", { class: "row" },
         el("label", {}, "Image", images), el("label", {}, "Name", name), el("label", {}, "vCPUs", vcpus),
         el("label", {}, "RAM (MB)", ram), el("label", { class: "check" }, internet, "Internet"),
-        me.is_admin ? el("label", { class: "check" }, permanent, "Permanent") : null, create)),
-    el("div", { class: "panel" }, el("table", {},
-      el("thead", {}, el("tr", {}, ["Name", "OS", "State", "Kind", "Expires", "Owner", "Snapshots"].map(h => el("th", {}, h)))),
+        me.is_admin ? el("label", { class: "check" }, permanent, "Permanent") : null, create),
+      status),
+    el("div", { class: "panel pad0" }, el("table", { class: "vms" },
+      el("thead", {}, el("tr", {}, ["Name", "OS", "State", "Size", "Internet", "Kind", "Expires", "Owner", "Snapshots", ""].map(h => el("th", {}, h)))),
       list)));
 
-  for (const img of await api("GET", "/api/images")) images.append(el("option", { value: img.name }, `${img.name} (${img.os})`));
-  if (!images.options.length) images.append(el("option", { value: "" }, "no image yet"));
+  const imgs = await api("GET", "/api/images");
+  for (const img of imgs) images.append(el("option", { value: img.name }, `${img.name} · ${img.os}`));
+  if (!images.options.length) { images.append(el("option", { value: "" }, "no image yet")); create.disabled = true; }
 
   async function refresh() {
     const vms = await api("GET", "/api/vms");
-    list.replaceChildren(...(vms.length ? vms.map(v => el("tr", {},
-      el("td", {}, el("a", { href: `/vm/${encodeURIComponent(v.name)}`, "data-link": true }, v.name)),
-      el("td", {}, v.os), el("td", {}, el("span", { class: `state ${v.state}` }, v.state)), el("td", {}, v.kind),
-      el("td", {}, v.expires_in_hours === null ? "never" : `in ${v.expires_in_hours} h`),
-      el("td", {}, v.owner), el("td", {}, v.snapshots.join(", ") || "–")))
-      : [el("tr", {}, el("td", { colspan: 7, class: "muted" }, "No VM yet."))]));
+    const running = vms.filter(v => v.state === "running").length;
+    const cards = [statCard(vms.length, "VMs"), statCard(running, "running", "ok"), statCard(imgs.length, "images")];
+    if (me.is_admin) {
+      try { const ags = await api("GET", "/api/agents"); cards.push(statCard(ags.filter(a => !a.revoked_at).length, "agents")); } catch {}
+    }
+    stats.replaceChildren(...cards);
+    list.replaceChildren(...(vms.length ? vms.map(v => {
+      const quick = v.state === "running"
+        ? el("button", { class: "ghost mini", onclick: (e) => { e.stopPropagation(); act(e.target, () => api("POST", `/api/vms/${encodeURIComponent(v.name)}/power`, { action: "stop" }), "Stopping").then(refresh); } }, "Stop")
+        : el("button", { class: "ghost mini", onclick: (e) => { e.stopPropagation(); act(e.target, () => api("POST", `/api/vms/${encodeURIComponent(v.name)}/power`, { action: "start" }), "Starting").then(refresh); } }, "Start");
+      return el("tr", { class: "clickable", onclick: () => navigate(`/vm/${encodeURIComponent(v.name)}`) },
+        el("td", {}, el("a", { href: `/vm/${encodeURIComponent(v.name)}`, "data-link": true }, v.name)),
+        el("td", { class: "muted" }, `${osIcon(v.os)} ${v.os}`),
+        el("td", {}, el("span", { class: `state ${v.state}` }, v.state)),
+        el("td", { class: "muted" }, `${v.vcpus} vCPU · ${v.ram_mb} MB`),
+        el("td", {}, el("span", { class: v.internet ? "badge on" : "badge off" }, v.internet ? "on" : "off")),
+        el("td", {}, el("span", { class: "badge " + (v.kind === "permanent" ? "perm" : "") }, v.kind)),
+        el("td", { class: "muted" }, v.expires_in_hours === null ? "never" : `in ${v.expires_in_hours} h`),
+        el("td", { class: "muted" }, v.owner), el("td", { class: "muted" }, v.snapshots.join(", ") || "–"),
+        el("td", { style: "text-align:right" }, quick));
+    }) : [el("tr", {}, el("td", { colspan: 10, class: "muted empty" }, "No VM yet — create one above."))]));
   }
   await refresh();
   timers.push(setInterval(refresh, 5000));
+}
+
+// ---------- images ----------
+
+async function imagesPage() {
+  const list = el("tbody");
+  app.append(
+    el("h1", {}, "Images"),
+    el("p", { class: "muted", style: "margin-top:-8px" },
+      "Clean base images. Copies and forks are instant overlays on top of these. Build more with the scripts in ", el("code", {}, "images/"), "."),
+    el("div", { class: "panel pad0" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Name", "OS", "Description", me.is_admin ? "" : null].filter(h => h !== null).map(h => el("th", {}, h)))),
+      list)));
+
+  async function refresh() {
+    const imgs = await api("GET", "/api/images");
+    list.replaceChildren(...(imgs.length ? imgs.map(img => {
+      const del = me.is_admin ? el("button", { class: "danger mini", onclick: () =>
+        confirm(`Delete image "${img.name}" and its volume? VMs using it must be gone first.`) &&
+        act(del, () => api("DELETE", `/api/images/${encodeURIComponent(img.name)}`), "Image deleted").then(refresh) }, "Delete") : null;
+      return el("tr", {},
+        el("td", {}, el("strong", {}, img.name)),
+        el("td", { class: "muted" }, `${osIcon(img.os)} ${img.os}`),
+        el("td", { class: "muted" }, img.description || "–"),
+        me.is_admin ? el("td", { style: "text-align:right" }, del) : null);
+    }) : [el("tr", {}, el("td", { colspan: 4, class: "muted empty" },
+      "No image registered yet. Build one on the host: ", el("code", {}, "images/linux/build-ubuntu.sh 24.04"), "."))]));
+  }
+  await refresh();
+}
+
+// ---------- guide ----------
+
+function guidePage() {
+  const origin = location.origin;
+  const groups = [
+    ["Discover & create", [
+      ["list_images", "the clean base images you can start from"],
+      ["create_vm", "new VM from an image (image, name?, vcpus?, ram_mb?, internet?)"],
+      ["list_vms / get_vm", "your VMs, and one VM's details + access (SSH, console, password)"],
+      ["fork", "new VM from a snapshot — branch off any saved state, instantly"],
+    ]],
+    ["Run things inside", [
+      ["exec", "run a command, get stdout/stderr/exit code (command, shell?, timeout?)"],
+      ["upload / download", "copy a file in or out — any file, .exe/.dll included, no limit"],
+    ]],
+    ["See & drive the screen", [
+      ["screenshot", "PNG of the live screen"],
+      ["click / type_text / send_keys", "mouse and keyboard, e.g. for a GUI installer"],
+    ]],
+    ["Save & compare states", [
+      ["snapshot", "save the VM's state (with_memory? keeps RAM too)"],
+      ["list_snapshots / revert", "list saved states; roll back to one"],
+      ["delete_snapshot", "forget a saved state"],
+      ["diff", "what changed on disk between two states (files, Windows registry)"],
+    ]],
+    ["Lifecycle & control", [
+      ["power", "start / stop / reboot / force_stop"],
+      ["keep", "extend expiry or make permanent (admin) — disposable VMs auto-expire"],
+      ["set_internet", "allow or block internet for this VM (off by default)"],
+      ["destroy", "delete the VM and its snapshots"],
+      ["history", "the journal of everything that happened"],
+    ]],
+  ];
+
+  app.append(
+    el("h1", {}, "Guide"),
+    el("p", { class: "muted", style: "margin-top:-8px;max-width:70ch" },
+      "Agents drive Strata over MCP; humans use this web UI or the ", el("code", {}, "strata"),
+      " CLI. Everything goes through the same checked, journaled actions — no raw hypervisor access."),
+
+    el("div", { class: "panel" }, el("h2", {}, "1 · Connect an agent"),
+      el("p", { class: "muted" }, "Generate a per-agent token on the ",
+        el("a", { href: "/agents", "data-link": true }, "Agents"),
+        " page (admin). Each agent gets one line to paste — then zero config:"),
+      el("div", { class: "secret" },
+        el("code", {}, `claude mcp add --transport http strata ${origin}/mcp \\\n  --header "Authorization: Bearer strata_<the-token>"`),
+        copyButton(`claude mcp add --transport http strata ${origin}/mcp --header "Authorization: Bearer strata_<the-token>"`)),
+      el("p", { class: "muted", style: "margin-bottom:0" }, "Other MCP clients: endpoint ",
+        el("code", {}, `${origin}/mcp`), ", header ", el("code", {}, "Authorization: Bearer <token>"),
+        ". A token only ever sees its own VMs.")),
+
+    el("div", { class: "panel" }, el("h2", {}, "2 · What an agent can do (MCP tools)"),
+      ...groups.map(([title, tools]) => el("div", { style: "margin-bottom:14px" },
+        el("div", { style: "font-weight:600;margin-bottom:6px" }, title),
+        el("table", { class: "tools" }, el("tbody", {}, ...tools.map(([n, d]) =>
+          el("tr", {}, el("td", { style: "white-space:nowrap;width:1%" }, el("code", {}, n)),
+            el("td", { class: "muted" }, d)))))))),
+
+    el("div", { class: "panel" }, el("h2", {}, "3 · A typical session"),
+      el("ol", { class: "steps" },
+        el("li", {}, el("code", {}, "create_vm"), " from an image → you get a running VM with SSH + a live console."),
+        el("li", {}, el("code", {}, "exec"), " / ", el("code", {}, "upload"), " to set things up (drop a payload, run a script)."),
+        el("li", {}, el("code", {}, "snapshot"), " the clean state before an experiment."),
+        el("li", {}, "Do the risky thing. Then ", el("code", {}, "diff"), " against the snapshot to see exactly what changed."),
+        el("li", {}, el("code", {}, "revert"), " to undo, or ", el("code", {}, "fork"), " the snapshot into a fresh VM to branch."),
+        el("li", {}, el("code", {}, "destroy"), " when done — or leave it; disposable VMs expire on their own."))),
+
+    el("div", { class: "panel" }, el("h2", {}, "Humans & security"),
+      el("p", { class: "muted", style: "margin-top:0" }, "Same actions from a shell with the ",
+        el("code", {}, "strata"), " CLI (e.g. ", el("code", {}, "strata exec <vm> -- <cmd>"), ", ",
+        el("code", {}, "strata snapshot <vm> <name>"), "), or from this UI (live screen, snapshot tree, journal)."),
+      el("p", { class: "muted", style: "margin-bottom:0" }, "Every VM is sealed off by default: no route to the host, the LAN, the hypervisor or the internet. ",
+        el("code", {}, "set_internet"), " opens internet for one VM only — never a private network.")));
 }
 
 // ---------- one VM ----------
@@ -183,7 +336,7 @@ async function vmPage(name) {
   try { vm = await api("GET", `/api/vms/${encodeURIComponent(name)}`); }
   catch (e) { app.append(el("p", { class: "bad" }, e.message)); return; }
   const base = `/api/vms/${encodeURIComponent(name)}`;
-  const screen = el("div", { id: "screen" }, "Connecting…");
+  const screen = el("div", { id: "screen" }, spinner("Connecting to the live screen…"));
   const info = el("dl", { class: "kv" });
   const snaps = el("tbody");
   const journal = el("tbody");
@@ -208,7 +361,8 @@ async function vmPage(name) {
   const cadBtn = el("button", { class: "ghost", onclick: () => rfb ? rfb.sendCtrlAltDel() : toast("Screen not connected", true) }, "Ctrl+Alt+Del");
 
   app.append(
-    el("h1", {}, name, " ", el("span", { class: "muted", style: "font-weight:400;font-size:14px" }, `${vm.os} · ${vm.source}`)),
+    el("h1", {}, el("a", { href: "/", "data-link": true, class: "back" }, "VMs"), " / ", name,
+      " ", el("span", { class: "muted", style: "font-weight:400;font-size:14px" }, `${osIcon(vm.os)} ${vm.os} · ${vm.source}`)),
     el("div", { class: "grid" },
       el("div", {},
         el("div", { class: "panel" }, screen,
@@ -228,7 +382,7 @@ async function vmPage(name) {
         el("form", { class: "panel", onsubmit: async (ev) => {
           ev.preventDefault();
           if (diffA.value === diffB.value) return toast("Pick two different states", true);
-          diffOut.replaceChildren(el("span", { class: "muted" }, "Comparing… (the VM is read offline)"));
+          diffOut.replaceChildren(spinner("Comparing… (the VM is read offline)"));
           const res = await act(diffBtn, () => api("GET",
             `${base}/diff?from=${encodeURIComponent(diffA.value)}&to=${encodeURIComponent(diffB.value)}`));
           if (res) renderDiff(diffOut, res);
@@ -247,20 +401,21 @@ async function vmPage(name) {
       ["User", [a.username, copyButton(a.username)]],
       ["Password", [el("code", {}, "••••••••"), copyButton(a.password)]],
       ["SSH", [el("code", {}, a.ssh), copyButton(a.ssh)]],
-      a.rdp ? ["RDP", [el("code", {}, a.rdp), el("a", { href: `${base}/rdp`, download: `${name}.rdp` }, ".rdp file")]] : null,
+      ["Console", [el("code", {}, a.console), copyButton(a.console)]],
+      a.rdp ? ["RDP", [el("code", {}, a.rdp), el("a", { class: "ghost mini", href: `${base}/rdp`, download: `${name}.rdp` }, ".rdp file")]] : null,
     ].filter(Boolean);
     info.replaceChildren(...rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
     netBtn.textContent = vm.internet ? "Block internet" : "Allow internet";
     const list = await api("GET", `${base}/snapshots`);
     snaps.replaceChildren(...list.map(s => {
-      const revert = el("button", { class: "ghost", onclick: () => confirm(`Go back to "${s.name}"? Changes since then are lost.`) &&
+      const revert = el("button", { class: "ghost mini", onclick: () => confirm(`Go back to "${s.name}"? Changes since then are lost.`) &&
         act(revert, () => api("POST", `${base}/snapshots/${encodeURIComponent(s.name)}/revert`), `Back to ${s.name}`).then(() => { refresh(); connectScreen(screen, name); }) }, "Revert");
-      const fork = el("button", { class: "ghost", onclick: async () => {
+      const fork = el("button", { class: "ghost mini", onclick: async () => {
         toast("Creating a VM from this state…");
         const v = await act(fork, () => api("POST", `${base}/snapshots/${encodeURIComponent(s.name)}/fork`, {}));
         if (v) navigate(`/vm/${encodeURIComponent(v.name)}`);
       } }, "New VM");
-      const del = el("button", { class: "ghost", onclick: () => confirm(`Forget "${s.name}"?`) &&
+      const del = el("button", { class: "ghost mini", onclick: () => confirm(`Forget "${s.name}"?`) &&
         act(del, () => api("DELETE", `${base}/snapshots/${encodeURIComponent(s.name)}`), "Deleted").then(refresh) }, "Delete");
       return el("tr", {}, el("td", {}, el("strong", {}, s.name), el("div", { class: "muted" }, `${ago(s.created_at)}${s.with_memory ? " · with memory" : ""}`)),
         el("td", { style: "text-align:right;white-space:nowrap" }, revert, " ", fork, " ", del));
@@ -317,6 +472,7 @@ async function agentsPage() {
 
   app.append(
     el("h1", {}, "Agents"),
+    el("p", { class: "muted", style: "margin-top:-8px" }, "Each agent gets its own token. It only sees its own VMs, bounded by the limits below. Revoke anytime."),
     el("form", { class: "panel", onsubmit: async (ev) => {
       ev.preventDefault();
       const res = await act(create, () => api("POST", "/api/agents", {
@@ -325,7 +481,7 @@ async function agentsPage() {
       if (!res) return;
       name.value = "";
       result.replaceChildren(el("div", { class: "secret" },
-        el("strong", {}, `Token for ${res.name}: shown once, copy it now.`),
+        el("strong", {}, `Token for ${res.name} — shown once, copy it now.`),
         el("div", { class: "muted", style: "margin-top:8px" }, "Claude Code: paste this line in a terminal"),
         el("code", {}, res.connect), copyButton(res.connect),
         el("div", { class: "muted", style: "margin-top:10px" }, "Other MCP clients: URL and token"),
@@ -336,7 +492,7 @@ async function agentsPage() {
         el("label", {}, "Max RAM (MB)", maxRam), el("label", {}, "Max vCPUs", maxCpu),
         el("label", {}, "Expires (days)", days), create),
       el("div", { style: "margin-top:12px" }, result)),
-    el("div", { class: "panel" }, el("table", {},
+    el("div", { class: "panel pad0" }, el("table", {},
       el("thead", {}, el("tr", {}, ["Name", "Role", "Limits", "Created", "Status", ""].map(h => el("th", {}, h)))), list)));
 
   async function refresh() {
@@ -344,11 +500,12 @@ async function agentsPage() {
     list.replaceChildren(...agents.map(a => {
       const status = a.revoked_at ? "revoked" : (a.expires_at && a.expires_at * 1000 < Date.now()) ? "expired"
         : a.expires_at ? `expires ${new Date(a.expires_at * 1000).toLocaleDateString()}` : "active";
-      const revoke = el("button", { class: "danger", onclick: () => confirm(`Revoke ${a.name}? Its token stops working immediately.`) &&
+      const revoke = el("button", { class: "danger mini", onclick: () => confirm(`Revoke ${a.name}? Its token stops working immediately.`) &&
         act(revoke, () => api("DELETE", `/api/agents/${encodeURIComponent(a.name)}`), "Revoked").then(refresh) }, "Revoke");
-      return el("tr", {}, el("td", {}, el("strong", {}, a.name)), el("td", {}, a.is_admin ? "admin" : "agent"),
+      return el("tr", {}, el("td", {}, el("strong", {}, a.name)), el("td", {}, el("span", { class: "badge " + (a.is_admin ? "perm" : "") }, a.is_admin ? "admin" : "agent")),
         el("td", { class: "muted" }, `${a.max_vms} VMs · ${a.max_ram_mb} MB · ${a.max_vcpus} vCPU`),
-        el("td", { class: "muted" }, ago(a.created_at)), el("td", {}, status),
+        el("td", { class: "muted" }, ago(a.created_at)),
+        el("td", {}, el("span", { class: "badge " + (status === "active" ? "on" : status === "revoked" || status === "expired" ? "off" : "") }, status)),
         el("td", { style: "text-align:right" }, a.revoked_at ? null : revoke));
     }));
   }

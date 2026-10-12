@@ -4,20 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Strata</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
   <header>
-    <a class="brand" href="/">Strata</a>
+    <a class="brand" href="/"><span class="brand-mark"></span>Strata</a>
     <nav id="nav" hidden>
       <a href="/" data-link>VMs</a>
+      <a href="/images" data-link id="nav-images">Images</a>
       <a href="/agents" data-link id="nav-agents" hidden>Agents</a>
+      <a href="/guide" data-link id="nav-guide">Guide</a>
+      <span class="spacer"></span>
       <span id="whoami"></span>
       <button id="logout" class="ghost">Log out</button>
     </nav>
   </header>
   <main id="app"></main>
   <div id="toast" role="status" hidden></div>
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js?v=3"></script>
 </body>
 </html>

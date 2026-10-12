@@ -238,7 +238,8 @@ class Api:
 
     def web_routes(self) -> list:
         index = lambda r: FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})  # noqa: E731
-        routes = [Route("/", index), Route("/vm/{vm}", index), Route("/agents", index),
+        routes = [Route("/", index), Route("/vm/{vm}", index), Route("/images", index),
+                  Route("/guide", index), Route("/agents", index),
                   Mount("/static", StaticFiles(directory=WEB_DIR))]
         if NOVNC_DIR.is_dir():
             routes.append(Mount("/novnc", StaticFiles(directory=NOVNC_DIR)))
