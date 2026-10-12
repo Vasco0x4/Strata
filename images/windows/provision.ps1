@@ -61,6 +61,12 @@ try {
 powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0
 
+# Clear any automatic logon so the finished image shows a login screen and does not try to
+# auto-log-in with a build-time password (Strata resets the account password per VM).
+$winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+Set-ItemProperty $winlogon -Name AutoAdminLogon -Value "0" -ErrorAction SilentlyContinue
+Remove-ItemProperty $winlogon -Name DefaultPassword -ErrorAction SilentlyContinue
+
 Stop-Transcript | Out-Null
 # Hand back a clean, powered-off image
 Stop-Computer -Force

@@ -112,8 +112,25 @@ if ! wait_shutoff "$dom" 5400; then
   sudo virsh -c qemu:///system start $dom   (if already off)"
 fi
 [[ -f "$abort_flag" ]] && die "storage watchdog stopped the build: the disk exceeded ${MAX_BUILD_GB} GB."
+
+# Verify the image before registering: boot it and confirm the QEMU guest agent answers.
+# provision.ps1 installs the agent and then powers off, so a working agent on this boot proves
+# provisioning succeeded. This also guards against a false success (e.g. the VM being destroyed
+# externally rather than powering off on its own) ever registering a broken image.
+log "verifying the built image (booting to check the guest agent)"
+$VIRSH start "$dom" >/dev/null 2>&1 || true
+verified=""
+for _ in $(seq 1 80); do
+	if $VIRSH qemu-agent-command "$dom" '{"execute":"guest-ping"}' >/dev/null 2>&1; then verified=1; break; fi
+	sleep 3
+done
+$VIRSH shutdown "$dom" --mode agent >/dev/null 2>&1 || true
+sleep 5
 cleanup_domain "$dom"
 trap - EXIT
+[[ -n "$verified" ]] || die "the built image did not come up with a working guest agent: provisioning failed.
+  The disk is kept at $disk for inspection; the image was NOT registered."
+log "guest agent verified"
 
 # The installed disk is used as the image as-is. We deliberately skip the usual
 # `qemu-img convert -c` recompression: it writes a second full copy alongside the original
