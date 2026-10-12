@@ -1,4 +1,5 @@
-# Strata first-logon provisioning for Windows 11. Runs once, then powers off.
+# Strata provisioning for Windows 11. Runs once (as SYSTEM via SetupComplete.cmd, or as a
+# fallback at first logon), then powers off.
 # Goal: the guest agent running at every boot (Strata depends on it), SSH and RDP
 # reachable, and no automatic disk encryption (so states can be compared later).
 # Windows Defender is left ON in the clean image; turn it off per-VM when needed

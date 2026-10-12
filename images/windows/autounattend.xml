@@ -2,7 +2,11 @@
 <!-- Unattended Windows 11 install for Strata. Real TPM 2.0 and Secure Boot are provided
      by the VM, so no hardware-check bypass is needed. Creates a local "strata" account
      (its password is set per-VM later through the guest agent), skips the Microsoft
-     account screens, and runs provision.ps1 on first logon. -->
+     account screens, and runs provision.ps1. Provisioning runs primarily through
+     SetupComplete.cmd (Windows runs it as SYSTEM, fully elevated, before the first logon),
+     staged during specialize below; autologon + FirstLogonCommands is kept as a fallback.
+     SetupComplete needs an Enterprise edition (this image is Enterprise eval) — Windows
+     refuses user SetupComplete scripts on consumer editions with an OEM key. -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
   <settings pass="windowsPE">
     <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64"
@@ -55,14 +59,22 @@
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <ComputerName>strata</ComputerName>
     </component>
-    <!-- Block automatic BitLocker device encryption before it can start. RunSynchronous belongs
-         to Microsoft-Windows-Deployment, NOT Shell-Setup (putting it under Shell-Setup makes the
+    <!-- Block automatic BitLocker device encryption before it can start, and stage the
+         provisioning script as SetupComplete.cmd. RunSynchronous belongs to
+         Microsoft-Windows-Deployment, NOT Shell-Setup (putting it under Shell-Setup makes the
          whole answer file invalid, which aborts Setup with "restarted unexpectedly"). -->
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <RunSynchronous>
         <RunSynchronousCommand wcm:action="add"><Order>1</Order>
           <Path>reg add HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f</Path>
+        </RunSynchronousCommand>
+        <!-- Find provision.ps1 on the answer media (CD letter varies) and install it as
+             C:\Windows\Setup\Scripts\SetupComplete.cmd, which Windows runs once as SYSTEM
+             (elevated) when Setup finishes, before the first logon. This is the reliable path:
+             it needs no logon and is never UAC-filtered, unlike FirstLogonCommands. -->
+        <RunSynchronousCommand wcm:action="add"><Order>2</Order>
+          <Path>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$d=(Get-PSDrive -PSProvider FileSystem|?{Test-Path (Join-Path $_.Root 'provision.ps1')}|Select -First 1).Root; if($d){New-Item -ItemType Directory -Force 'C:\Windows\Setup\Scripts'|Out-Null; Copy-Item (Join-Path $d 'provision.ps1') 'C:\Windows\Setup\Scripts\provision.ps1' -Force; Set-Content 'C:\Windows\Setup\Scripts\SetupComplete.cmd' 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\provision.ps1 &gt; C:\Windows\Setup\Scripts\provision.log 2&gt;&amp;1' -Encoding Ascii}"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -97,11 +109,14 @@
         <Enabled>true</Enabled><Username>strata</Username><LogonCount>1</LogonCount>
         <Password><Value>StrataSetup!1</Value><PlainText>true</PlainText></Password>
       </AutoLogon>
+      <!-- Fallback only: SetupComplete.cmd (staged in specialize) is the primary provisioner and
+           normally powers the machine off before this logon ever happens. This runs provision.ps1
+           again only if SetupComplete did not (provision is safe to re-run). -->
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
           <CommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-PSDrive -PSProvider FileSystem | ForEach-Object { $p = Join-Path $_.Root 'provision.ps1'; if (Test-Path $p) { &amp; $p } }"</CommandLine>
-          <Description>Strata provisioning: find provision.ps1 on any drive and run it (CD letters shift after install)</Description>
+          <Description>Strata provisioning fallback: find provision.ps1 on any drive and run it</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

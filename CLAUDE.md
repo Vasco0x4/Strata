@@ -30,7 +30,8 @@ snapshot, diff, revert, fork, and full isolation (VM cannot reach host/LAN/Proxm
 unless enabled). 63 tests + ruff + CI green.
 
 Host specifics discovered live (baked into install-host.sh): libvirtd is the monolithic
-daemon (not virtqemud); qemu.conf has dynamic_ownership=0, remember_owner=0, namespaces=[];
+daemon (not virtqemud); qemu.conf has dynamic_ownership=1 (libvirt chowns disks and the
+swtpm socket to qemu — Windows 11 TPM needs it), remember_owner=0, namespaces=[];
 pools are setgid kvm 2775; strata user is in kvm+libvirt+strata-admin. IPs are NOT pinned —
 dnsmasq wouldn't honor reservations, so VMs get sticky DHCP leases and Strata discovers the
 IP via the guest agent; clean-traffic uses CTRL_IP_LEARNING=dhcp. Offline diff uses a
