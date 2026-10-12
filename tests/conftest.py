@@ -18,6 +18,10 @@ class FakeHypervisor:
     def volume_path(self, pool, volume):
         return f"/srv/strata/{pool}/{volume}"
 
+    def delete_volume(self, pool, volume):
+        self.deleted_volumes = getattr(self, "deleted_volumes", set())
+        self.deleted_volumes.add(volume)
+
     def create_vm(self, spec: VMSpec):
         if self.fail_create:
             raise RuntimeError("boom")

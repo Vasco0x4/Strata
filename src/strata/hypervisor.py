@@ -27,6 +27,7 @@ class ExecResult:
 
 class Hypervisor(Protocol):
     def volume_path(self, pool: str, volume: str) -> str: ...
+    def delete_volume(self, pool: str, volume: str) -> None: ...
 
     # Lifecycle
     def create_vm(self, spec: VMSpec) -> None:

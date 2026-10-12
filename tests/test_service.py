@@ -212,3 +212,23 @@ def test_addresses_and_ports_are_unique_across_vms(env):
         ports.clear()
         macs.add(hv.vms[vm["name"]]["spec"].mac)
     assert len(ips) == 8 and len(macs) == 8
+
+
+def test_delete_image(env):
+    svc, hv, net, caller = env
+    alice, admin = caller("alice"), caller("root", admin=True)
+    # non-admin cannot delete an image
+    with pytest.raises(Forbidden):
+        svc.delete_image(alice, "ubuntu")
+    # refused while a VM from the image exists
+    svc.create_vm(alice, image="ubuntu", name="u1")
+    with pytest.raises(Conflict, match="still use"):
+        svc.delete_image(admin, "ubuntu")
+    svc.destroy(alice, "u1")
+    # now it deletes and the volume is removed
+    out = svc.delete_image(admin, "ubuntu")
+    assert out["deleted"] == "ubuntu" and out["volume_removed"]
+    assert "ubuntu" in getattr(hv, "deleted_volumes", set()) or "ubuntu.qcow2" in getattr(hv, "deleted_volumes", set())
+    assert [i["name"] for i in svc.list_images(admin)] == ["win11"]
+    with pytest.raises(NotFound):
+        svc.delete_image(admin, "ubuntu")

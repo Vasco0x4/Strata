@@ -172,6 +172,9 @@ class Api:
                 return self.register_image(**allowed(b, "name", "os", "volume", "username", "description"))
             return s.list_images(self.caller(r))
 
+        def delete_image(r, b):
+            return s.delete_image(self.caller(r), p(r, "name"))
+
         def login(r, b):
             token = b.get("token", "")
             caller = auth.authenticate(self.db, token)
@@ -193,6 +196,7 @@ class Api:
             Route("/api/logout", e(logout), methods=["POST"]),
             Route("/api/me", e(me)),
             Route("/api/images", e(images), methods=["GET", "POST"]),
+            Route("/api/images/{name}", e(delete_image), methods=["DELETE"]),
             Route("/api/agents", e(agents), methods=["GET", "POST"]),
             Route("/api/agents/{name}", e(revoke), methods=["DELETE"]),
             Route("/api/history", e(lambda r, b: s.history(

@@ -210,6 +210,12 @@ class LibvirtHypervisor:
         except libvirt.libvirtError:
             raise NotFound(f"volume {volume!r} not found in pool {pool!r}") from None
 
+    def delete_volume(self, pool: str, volume: str) -> None:
+        try:
+            self.conn.storagePoolLookupByName(pool).storageVolLookupByName(volume).delete(0)
+        except libvirt.libvirtError:
+            pass
+
     def create_vm(self, spec: VMSpec) -> None:
         disk = self._new_overlay(spec.name, spec.backing)
         dom = self.conn.defineXML(_domain_xml(self.cfg, spec, disk))

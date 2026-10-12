@@ -194,6 +194,27 @@ class Service:
     def list_images(self, caller: Caller) -> list[dict]:
         return self.db.all("SELECT name, os, description FROM images ORDER BY name")
 
+    def delete_image(self, caller: Caller, name: str, delete_volume: bool = True) -> dict:
+        """Unregister an image (admin). Refused while VMs created from it still exist."""
+        if not caller.is_admin:
+            raise Forbidden("only the admin can delete images")
+        img = self.db.one("SELECT * FROM images WHERE name = ?", (name,))
+        if img is None:
+            raise NotFound(f"no image named {name!r}", "see list_images")
+        users = self.db.all("SELECT name FROM vms WHERE source = ?", (f"image {name}",))
+        if users:
+            raise Conflict(f"VMs still use image {name!r}: " + ", ".join(v["name"] for v in users),
+                           "destroy those VMs first")
+        self.db.execute("DELETE FROM images WHERE name = ?", (name,))
+        removed = False
+        if delete_volume:
+            try:
+                self.hv.delete_volume(self.cfg.images_pool, img["volume"])
+                removed = True
+            except Exception:
+                log.exception("deleting image volume %s", img["volume"])
+        return {"deleted": name, "volume_removed": removed}
+
     def list_vms(self, caller: Caller) -> list[dict]:
         if caller.is_admin:
             rows = self.db.all("SELECT * FROM vms ORDER BY created_at")

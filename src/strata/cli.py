@@ -155,6 +155,8 @@ def parser() -> argparse.ArgumentParser:
     snap = (("snapshot",), {})
     add("login", cmd_login, "save the URL and token to use", (("url",), {}), (("token",), {}))
     add("images", simple("GET", "/api/images"), "list images")
+    add("delete-image", simple("DELETE", lambda a: f"/api/images/{a.name}"),
+        "unregister an image and remove its volume (admin)", (("name",), {}))
     add("register-image", simple("POST", "/api/images", lambda a: {
         "name": a.name, "os": a.os, "volume": a.volume, "username": a.username, "description": a.description}),
         "register a volume of the images pool as an image (admin)",
